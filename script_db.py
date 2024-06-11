@@ -42,7 +42,3 @@ async def update_students():
     '''))
     session.execute(text('DROP TABLE MentorStudentCount;'))
     session.commit()
-
-
-# if __name__ == '__main__':
-#     from registration import Mentor
