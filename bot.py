@@ -12,6 +12,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import Column, Integer, String, UniqueConstraint, ForeignKey, DateTime
 import config
 from datetime import datetime
+from aiogram.utils.exceptions import MessageNotModified
+import os
+import uuid
 
 # Настройка логирования
 logging.basicConfig(level=10, filename="py_log.log", filemode="w",
@@ -35,9 +38,11 @@ class User(Base):
     nickname = Column(String)
     hero_class = Column(String)
     account_id = Column(String, unique=True)
+    photo = Column(String)
     mentor_id = Column(Integer, ForeignKey('Mentors.id'))
     guild = Column(String)
     date_registration = Column(DateTime)
+    status = Column(String)
 
     __table_args__ = (UniqueConstraint('account_id'),)  # Уникальность для account_id
 
@@ -87,7 +92,7 @@ class Registration(StatesGroup):
     nickname = State()
     hero_class = State()
     account_id = State()
-    guild = State()
+    photo = State()
     user_mentor_id = State()
 
 
@@ -113,6 +118,54 @@ async def start_command(message: types.Message):
             reply_markup=markup,
             parse_mode='HTML'
         )
+
+
+# Команда показа профиля пользователя
+@dp.message_handler(lambda message: message.text == '\U0001F464Мой профиль')
+async def handle_profile(message: types.Message):
+    await show_profile_users(message)
+
+
+async def show_profile_users(message: types.Message):  # Функция показа профиля пользователя из таблицы Users
+    user_id = message.from_user.id
+
+    # Получаем данные пользователя из таблицы users
+    user = session.query(User).filter_by(telegram_id=user_id).first()
+
+    if user:
+        # Формируем текст сообщения с информацией о пользователе
+        profile_text = f"**Ваш профиль:**\n"
+        profile_text += f"ID: {user.id}\n"
+        profile_text += f"Telegram ID: {user.telegram_id}\n"
+        profile_text += f"Username: {user.username}\n"
+        profile_text += f"Имя: {user.first_name}\n"
+        profile_text += f"Nickname: {user.nickname}\n"
+        profile_text += f"Класс героя: {user.hero_class}\n"
+        profile_text += f"Account ID: {user.account_id}\n"
+
+
+
+        # Получаем имя наставника из таблицы Mentors
+        if user.mentor_id:
+            mentor = session.query(Mentor).filter_by(id=user.mentor_id).first()
+            if mentor:
+                profile_text += f"Наставник: {mentor.mentor_nickname}\n"
+            else:
+                profile_text += f"Наставник: Неизвестно\n"
+        else:
+            profile_text += f"Наставник: Отсутствует\n"
+
+        profile_text += f"Гильдия: {user.guild}\n"
+        profile_text += f"Дата регистрации: {user.date_registration.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        profile_text += f"Cтатус: {user.status}\n"
+
+        with open(f'{user.photo}', 'rb') as profile_photo:
+            await message.answer_photo(
+                photo=profile_photo,
+                caption=profile_text
+            )
+    else:
+        await message.answer("Профиль не найден.")
 
 
 @dp.message_handler(lambda message: message.text == 'Регистрация')
@@ -169,6 +222,7 @@ async def registration_start(message: types.Message, state: FSMContext):
             photo=reg_user_2_photo,
             caption=f'Привет! {username}. Давай зарегистрируем тебя.\n'
                     'Какой у тебя Ник в игре?'
+                    '\n\nДля отмены или выхода из регистрации введи /cancel'
         )
     await state.set_state(Registration.nickname.state)
 
@@ -273,6 +327,75 @@ async def process_account_id(message: types.Message, state: FSMContext):
         async with state.proxy() as data:
             data['account_id'] = account_id
             data['guild'] = 'AcademAURI'  # Автоматически задаем гильдию
+            data['status'] = '\U0001F7E2Active'
+
+            # Запрос фотографии
+            await message.reply("Загрузите свою фотографию:"
+                                "\nИспользуйте /next - для пропуска этапа, если сейчас нет фотографии профиля")
+            await Registration.photo.set()
+    elif account_id == '/cancel':
+        await state.finish()
+        await message.reply("Регистрация отменена!")
+
+
+@dp.message_handler(content_types=['photo', 'text'], state=Registration.photo)
+async def process_photo(message: types.Message, state: FSMContext):
+    if message.photo:
+        # Скачиваем фотографию, если сообщение не команда и не текст
+        photo = message.photo[-1]  # Берем последнюю фотографию (самую большую)
+        file_id = photo.file_id
+        file_path = await bot.get_file(file_id)
+        file_name = file_path['file_path']
+        await photo.download(destination_file=file_name)
+
+        # Определяем путь для сохранения файла
+        save_path = 'photos_profile/users'
+        os.makedirs(save_path, exist_ok=True)  # Создаем директорию, если ее нет
+
+        # Скачиваем файл в заданную директорию
+        await photo.download(destination_file=os.path.join(save_path, file_name))
+
+        # Генерируем уникальное имя для файла
+        unique_filename = str(uuid.uuid4()) + os.path.splitext(file_name)[1]
+
+        # Переименовываем файл
+        os.rename(os.path.join(save_path, file_name), os.path.join(save_path, unique_filename))
+
+        # Сохраняем путь к фотографии в данные состояния
+        async with state.proxy() as data:
+            data['photo'] = os.path.join(save_path, unique_filename)  # Сохраняем путь к файлу
+
+        # Переходим к выбору наставника
+        mentors = session.query(Mentor).all()
+        mentor_nicknames = [mentor.mentor_nickname for mentor in mentors]
+
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        for nickname in mentor_nicknames:
+            keyboard.add(types.KeyboardButton(nickname))
+
+        try:
+            await message.reply("Выберите наставника:", reply_markup=keyboard)
+        except MessageNotModified:
+            pass  # Если сообщение не было изменено, игнорируем ошибку
+
+        await Registration.user_mentor_id.set()
+
+        # # Удаляем скачанный файл из файловой системы
+        # os.remove(unique_filename)
+        # logging.info(f'Файл {unique_filename} удален из файловой системы.')
+        #
+        # # Удаляем ссылку на файл из памяти
+        # del unique_filename
+        # logging.info(f'Ссылка на файл удалена из памяти.')
+
+    elif message.text:
+        # Проверяем на команды /cancel и /next
+        if message.text.lower() == '/cancel':
+            await state.finish()  # Завершаем состояние
+            await message.reply("Регистрация отменена.")
+            return
+        elif message.text.lower() == '/next':
+            await state.finish()  # Завершаем состояние
             mentors = session.query(Mentor).all()
             mentor_nicknames = [mentor.mentor_nickname for mentor in mentors]
 
@@ -282,9 +405,17 @@ async def process_account_id(message: types.Message, state: FSMContext):
 
             await message.reply("Выберите наставника:", reply_markup=keyboard)
             await Registration.user_mentor_id.set()
-    elif account_id == '/cancel':
-        await state.finish()
-        await message.reply("Регистрация отменена!")
+            return
+
+        # Проверяем, является ли сообщение текстовым
+        elif message.text.lower() != '/next' or message.text.lower() != '/cancel':
+            await message.reply("На этом этапе доступна только загрузка фотографии или команды:"
+                                "\n/cancel - для отмены и выхода из регистрации"
+                                "\n/next - для пропуска этапа, если сейчас нет фотографии для профиля")
+            return
+    else:
+        # Если сообщение не текст и не фото, выводим ошибку
+        await message.reply("Неверный тип сообщения. Пожалуйста, загрузите фотографию.")
 
 
 @dp.message_handler(state=Registration.user_mentor_id)
@@ -324,9 +455,14 @@ async def process_user_mentor_id(message: types.Message, state: FSMContext):
                     nickname=data['nickname'],
                     hero_class=data['hero_class'],
                     account_id=data['account_id'],  # id аккаунта в игре
+                    photo=data['photo'],
                     guild=data['guild'],
                     mentor_id=data['user_mentor_id'],
-                    date_registration=datetime.now()
+                    date_registration=datetime.now(),
+                    status=data['status']  # Может иметь 3 значения:
+                    # active (активный участник ги);
+                    # absense (отпуск)
+                    # и offline (инактив)
                 )
                 session.add(user)
                 session.commit()
@@ -355,6 +491,7 @@ async def process_user_mentor_id(message: types.Message, state: FSMContext):
             except Exception as e:
                 logging.error(f"При выполнении функции update_students - произошла ошибка - [{e}]")
                 session.close()  # Закрываем сеанс с БД после завершения регистрации
+
     elif mentor_nickname == '/cancel':
         await state.finish()
         await message.reply("Регистрация отменена!")
@@ -371,7 +508,8 @@ class RegistrationMentors(StatesGroup):
 # Команда регистрации Наставников
 @dp.message_handler(commands=['reg_mentors'], state=None)
 async def registration_mentors_start(message: types.Message):
-    await message.reply("Введите свой никнейм:")
+    await message.reply("Введите свой никнейм:"
+                        "\n\nДля отмены или выхода из регистрации введи /cancel")
     await RegistrationMentors.mentor_nickname.set()
 
 
@@ -379,15 +517,19 @@ async def registration_mentors_start(message: types.Message):
 async def process_mentor_nickname(message: types.Message, state: FSMContext):
     mentor_nickname = message.text
     # Проверка на запрещённый символ "/"
-    if mentor_nickname.startswith('/'):
+    if mentor_nickname.startswith('/') and mentor_nickname != '/cancel':
         await message.reply("Неверно. Никнейм наставника не должен начинаться с символа /."
                             "\nВоспользуйся кнопками для выбора Наставника")
         return  # Выход из обработчика, если никнейм неверный
 
-    async with state.proxy() as data:
-        data['mentor_nickname'] = message.text
-    await message.reply("Теперь введите ID наставника в игре:")
-    await RegistrationMentors.mentor_account_id.set()
+    if mentor_nickname != '/cancel':
+        async with state.proxy() as data:
+            data['mentor_nickname'] = message.text
+        await message.reply("Теперь введите ID наставника в игре:")
+        await RegistrationMentors.mentor_account_id.set()
+    elif mentor_nickname == '/cancel':
+        await state.finish()
+        await message.reply("Регистрация отменена!")
 
 
 @dp.message_handler(state=RegistrationMentors.mentor_account_id)
@@ -395,7 +537,7 @@ async def process_mentor_account_id(message: types.Message, state: FSMContext):
     mentor_account_id = message.text
 
     # Проверка на запрещённый символ "/"
-    if mentor_account_id.startswith('/'):
+    if mentor_account_id.startswith('/') and mentor_account_id != '/cancel':
         await message.reply("Неверно. ID не должен начинаться с символа /")
         return  # Выход из обработчика, если ID неверный
 
@@ -403,7 +545,8 @@ async def process_mentor_account_id(message: types.Message, state: FSMContext):
             mentor_account_id.isdigit() and
             len(mentor_account_id) == 11 and
             mentor_account_id[-3:] == '160' and
-            int(mentor_account_id) > 0  # Проверка на наличие лишних нулей
+            int(mentor_account_id) > 0 or  # Проверка на наличие лишних нулей
+            mentor_account_id != '/cancel'
     ):
         await message.reply(
             "Неверно. ID должен содержать только цифры, быть не более 11 символов и заканчиваться на '160'.")
@@ -417,76 +560,92 @@ async def process_mentor_account_id(message: types.Message, state: FSMContext):
                             f"Введите другой ID или используйте команду /cancel для выхода из регистрации.")
         return
 
-    async with state.proxy() as data:
-        data['mentor_account_id'] = message.text
+    if mentor_account_id != '/cancel':
+        async with state.proxy() as data:
+            data['mentor_account_id'] = message.text
 
-        # Запрос данных о менторе
-        await message.reply("Введите интересы ментора (через запятую):")
-        await RegistrationMentors.mentor_interest.set()
+            # Запрос данных о менторе
+            await message.reply("Введите интересы ментора (через запятую):")
+            await RegistrationMentors.mentor_interest.set()
+    elif mentor_account_id == '/cancel':
+        await state.finish()
+        await message.reply("Регистрация отменена!")
 
 
 @dp.message_handler(state=RegistrationMentors.mentor_interest)
 async def process_mentor_interest(message: types.Message, state: FSMContext):
     mentor_interest = message.text
     # Проверка на запрещённый символ "/"
-    if mentor_interest.startswith('/'):
+    if mentor_interest.startswith('/') and mentor_interest != '/cancel':
         await message.reply("Неверно. Интересы ментора не должны начинаться с символа /."
                             "\nПожалуйста, введите интересы без символа /")
         return  # Выход из обработчика, если никнейм неверный
 
-    async with state.proxy() as data:
-        data['mentor_interest'] = mentor_interest
-        await message.reply("Введите время онлайн ментора (пример: 18:00-22:00):")
-        await RegistrationMentors.mentor_time_online.set()
+    if mentor_interest != '/cancel':
+        async with state.proxy() as data:
+            data['mentor_interest'] = mentor_interest
+            await message.reply("Введите время онлайн ментора (пример: 18:00-22:00):")
+            await RegistrationMentors.mentor_time_online.set()
+    elif mentor_interest == '/cancel':
+        await state.finish()
+        await message.reply("Регистрация отменена!")
 
 
 @dp.message_handler(state=RegistrationMentors.mentor_time_online)
 async def process_mentor_time_online(message: types.Message, state: FSMContext):
     mentor_time_online = message.text
     # Проверка на запрещённый символ "/"
-    if mentor_time_online.startswith('/'):
+    if mentor_time_online.startswith('/') and mentor_time_online != '/cancel':
         await message.reply("Неверно. Время онлайн ментора не должно начинаться с символа /."
                             "\nПожалуйста, введите время онлайн без символа /")
         return  # Выход из обработчика, если никнейм неверный
 
-    async with state.proxy() as data:
-        data['mentor_time_online'] = mentor_time_online
-        await message.reply("Введите краткую характеристику ментора (максимум 100 символов):")
-        await RegistrationMentors.mentor_characteristic.set()
+    if mentor_time_online != '/cancel':
+        async with state.proxy() as data:
+            data['mentor_time_online'] = mentor_time_online
+            await message.reply("Введите краткую характеристику ментора (максимум 100 символов):")
+            await RegistrationMentors.mentor_characteristic.set()
+    elif mentor_time_online == '/cancel':
+        await state.finish()
+        await message.reply("Регистрация отменена!")
 
 
 @dp.message_handler(state=RegistrationMentors.mentor_characteristic)
 async def process_mentor_characteristic(message: types.Message, state: FSMContext):
     mentor_characteristic = message.text
     # Проверка на запрещённый символ "/"
-    if mentor_characteristic.startswith('/'):
+    if mentor_characteristic.startswith('/') and mentor_characteristic != '/cancel':
         await message.reply("Неверно. Характеристика ментора не должна начинаться с символа /."
                             "\nПожалуйста, введите характеристику без символа /")
         return  # Выход из обработчика, если никнейм неверный
 
-    async with state.proxy() as data:
-        data['mentor_characteristic'] = mentor_characteristic
+    if mentor_characteristic != '/cancel':
+        async with state.proxy() as data:
+            data['mentor_characteristic'] = mentor_characteristic
 
-        # Сохраняем данные в БД
-        mentor = Mentor(
-            mentor_account_id=data['mentor_account_id'],
-            mentor_nickname=data['mentor_nickname'],
-            mentor_interest=data['mentor_interest'],
-            mentor_number_of_students=0,
-            mentor_time_online=data['mentor_time_online'],
-            mentor_characteristic=data['mentor_characteristic']
-        )
-        session.add(mentor)
-        session.commit()
-        session.close()  # Закрываем сеанс с БД после завершения регистрации
+            # Сохраняем данные в БД
+            mentor = Mentor(
+                mentor_account_id=data['mentor_account_id'],
+                mentor_nickname=data['mentor_nickname'],
+                mentor_interest=data['mentor_interest'],
+                mentor_number_of_students=0,
+                mentor_time_online=data['mentor_time_online'],
+                mentor_characteristic=data['mentor_characteristic']
+            )
+            session.add(mentor)
+            session.commit()
+            session.close()  # Закрываем сеанс с БД после завершения регистрации
 
-        logging.info(
-            f"Наставник {message.from_user.first_name} (username:{message.from_user.username}, "
-            f"ID: {message.from_user.id}) успешно завершил регистрацию"
-        )
+            logging.info(
+                f"Наставник {message.from_user.first_name} (username:{message.from_user.username}, "
+                f"ID: {message.from_user.id}) успешно завершил регистрацию"
+            )
 
-        await message.reply("Ментор успешно зарегистрирован!")
+            await message.reply("Ментор успешно зарегистрирован!")
+            await state.finish()
+    elif mentor_characteristic == '/cancel':
         await state.finish()
+        await message.reply("Регистрация отменена!")
 
 
 class RegistrationAdmins(StatesGroup):
@@ -498,16 +657,26 @@ class RegistrationAdmins(StatesGroup):
 # Команда регистрации Офицеров гильдии
 @dp.message_handler(commands=['reg_admins'], state=None)
 async def registration_admins_start(message: types.Message):
-    await message.reply("Введите свой никнейм:")
+    await message.reply("Введите свой никнейм:"
+                        "\n\nДля отмены или выхода из регистрации введи /cancel")
     await RegistrationAdmins.admin_nickname.set()
 
 
 @dp.message_handler(state=RegistrationAdmins.admin_nickname)
 async def process_admin_nickname(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['admin_nickname'] = message.text
-    await message.reply("Введите ID администратора в игре:")
-    await RegistrationAdmins.admin_account_id.set()
+    admin_nickname = message.text
+    # Проверка на запрещённый символ "/"
+    if admin_nickname.startswith('/') and admin_nickname != '/cancel':
+        await message.reply("Неверно. Никнейм не должен начинаться с символа /")
+        return  # Выход из обработчика, если никнейм неверный
+    if admin_nickname != '/cancel':
+        async with state.proxy() as data:
+            data['admin_nickname'] = message.text
+        await message.reply("Введите ID администратора в игре:")
+        await RegistrationAdmins.admin_account_id.set()
+    elif admin_nickname == '/cancel':
+        await state.finish()
+        await message.reply("Регистрация отменена!")
 
 
 @dp.message_handler(state=RegistrationAdmins.admin_account_id)
@@ -515,7 +684,7 @@ async def process_admin_account_id(message: types.Message, state: FSMContext):
     admin_account_id = message.text
 
     # Проверка на запрещённый символ "/"
-    if admin_account_id.startswith('/'):
+    if admin_account_id.startswith('/') and admin_account_id != '/cancel':
         await message.reply("Неверно. ID не должен начинаться с символа /")
         return  # Выход из обработчика, если ID неверный
     # Проверка длины и окончания ID
@@ -523,7 +692,8 @@ async def process_admin_account_id(message: types.Message, state: FSMContext):
             admin_account_id.isdigit() and
             len(admin_account_id) == 11 and
             admin_account_id[-3:] == '160' and
-            int(admin_account_id) > 0  # Проверка на наличие лишних нулей
+            int(admin_account_id) > 0 or  # Проверка на наличие лишних нулей
+            admin_account_id != '/cancel'
     ):
         await message.reply(
             "Неверно. ID должен содержать только цифры, быть не более 11 символов и заканчиваться на '160'.")
@@ -536,15 +706,19 @@ async def process_admin_account_id(message: types.Message, state: FSMContext):
                             f"Введите другой ID или используйте команду /cancel для выхода из регистрации.")
         return
 
-    async with state.proxy() as data:
-        data['admin_account_id'] = message.text
-    await message.reply("Выберите роль администратора:",
-                        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(
-                            types.KeyboardButton("Управляющий"),
-                            types.KeyboardButton("Заместитель"),
-                            types.KeyboardButton("\U0001F451Глава")
-                        ))
-    await RegistrationAdmins.admin_role.set()
+    if admin_account_id != '/cancel':
+        async with state.proxy() as data:
+            data['admin_account_id'] = message.text
+        await message.reply("Выберите роль администратора:",
+                            reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(
+                                types.KeyboardButton("Управляющий"),
+                                types.KeyboardButton("Заместитель"),
+                                types.KeyboardButton("\U0001F451Глава")
+                            ))
+        await RegistrationAdmins.admin_role.set()
+    elif admin_account_id == '/cancel':
+        await state.finish()
+        await message.reply("Регистрация отменена!")
 
 
 @dp.message_handler(state=RegistrationAdmins.admin_role)
@@ -555,37 +729,43 @@ async def process_admin_role(message: types.Message, state: FSMContext):
 
     admin_role = message.text.replace('\U0001F451', '')
 
-    if admin_role.startswith('/'):
-        await message.reply("Неверно. Класс не должен начинаться с символа /")
+    if admin_role.startswith('/') and admin_role != '/cancel':
+        await message.reply("Неверно. Роль не может начинаться с символа /."
+                            "\nВоспользуйся кнопками для выбора роли")
         return  # Выход из обработчика, если класс неверный
 
-    async with state.proxy() as data:
-        data['admin_role'] = admin_role
+    if admin_role != '/cancel':
+        async with state.proxy() as data:
+            data['admin_role'] = admin_role
 
-        # Проверка количества admin_role
-        existing_roles = session.query(Admin).filter_by(admin_role='Глава').all()  # Изменили фильтр на 'Глава'
-        if len(existing_roles) >= 2:
-            await message.reply(f"Достигнут предел количества Администраторов с ролью 'Глава'. "
-                                f"Введите другую роль или используйте команду /cancel для выхода из регистрации.")
-            return
+            # Проверка количества admin_role
+            existing_roles = session.query(Admin).filter_by(admin_role='Глава').all()  # Изменили фильтр на 'Глава'
+            if len(existing_roles) >= 2:
+                await message.reply(f"Достигнут предел количества Администраторов с ролью 'Глава'. "
+                                    f"Введите другую роль или используйте команду /cancel для выхода из регистрации.")
+                return
 
-            # Сохраняем данные в БД
-    admin = Admin(
-        admin_account_id=data['admin_account_id'],
-        admin_nickname=data['admin_nickname'],
-        admin_role=data['admin_role']
-    )
-    session.add(admin)
-    session.commit()
-    session.close()  # Закрываем сеанс с БД после завершения регистрации
+                # Сохраняем данные в БД
+        admin = Admin(
+            admin_account_id=data['admin_account_id'],
+            admin_nickname=data['admin_nickname'],
+            admin_role=data['admin_role']
+        )
+        session.add(admin)
+        session.commit()
+        session.close()  # Закрываем сеанс с БД после завершения регистрации
 
-    logging.info(
-        f"Администратор {message.from_user.first_name} (username:{message.from_user.username}, "
-        f"ID: {message.from_user.id}) успешно завершил регистрацию"
-    )
+        logging.info(
+            f"Администратор {message.from_user.first_name} (username:{message.from_user.username}, "
+            f"ID: {message.from_user.id}) успешно завершил регистрацию"
+        )
 
-    await message.reply("Администратор успешно зарегистрирован!")
-    await state.finish()
+        await message.reply("Администратор успешно зарегистрирован!")
+        await state.finish()
+    elif admin_role == '/cancel':
+        await state.finish()
+        await message.reply("Регистрация отменена!")
+
 
 '''КОМАНДЫ ДЛЯ АДМИНИСТРАТОРА'''
 
