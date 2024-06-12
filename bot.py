@@ -1,5 +1,8 @@
 import logging
 # import asyncio
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, Message, CallbackQuery, InlineKeyboardMarkup, \
+    InlineKeyboardButton, Update
+from aiogram.utils.callback_data import CallbackData
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -17,7 +20,7 @@ import os
 import uuid
 
 # Настройка логирования
-logging.basicConfig(level=10, filename="py_log.log", filemode="w",
+logging.basicConfig(level=10, filename="auri_bot_log.log", filemode="w",
                     format="%(asctime)s %(levelname)s %(message)s")
 
 engine = create_engine('sqlite:///Auri.db', echo=True)
@@ -69,6 +72,7 @@ class Mentor(Base):
     mentor_number_of_students = Column(Integer)
     mentor_time_online = Column(String)
     mentor_characteristic = Column(String)
+    mentor_photo = Column(String)
 
 
 # Определение класса Admin для БД
@@ -80,6 +84,7 @@ class Admin(Base):
     admin_nickname = Column(String)
     admin_role = Column(String)
     admin_position = Column(String)
+    admin_photo = Column(String)
 
 
 Base.metadata.create_all(engine)
@@ -102,6 +107,7 @@ class Registration(StatesGroup):
 @dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
     username = message.from_user.first_name
+
     buttons = [
         types.KeyboardButton('\U0001F464Мой профиль'),
         types.KeyboardButton('Регистрация'),
@@ -118,54 +124,254 @@ async def start_command(message: types.Message):
             reply_markup=markup,
             parse_mode='HTML'
         )
+    # await bot.set_webhook(url="https://api.telegram.org/bot7091077757:AAHfCZj7j48smo9WWhSo6Oi-JnJR47gwIY0/setwebhook",
+    #                       allowed_updates=["message", "callback_query"])
 
 
 # Команда показа профиля пользователя
+profile_callback = CallbackData("profile", "type", "id")  # Создаем CallbackData
+logging.info(f"ДО ПОКАЗА КНОПОК - {profile_callback}")  # del
+
+
+# @dp.message_handler(lambda message: message.text == '\U0001F464Мой профиль')
+# async def show_all_profiles(message: types.Message):
+#     user_id = message.from_user.id
+#
+#     # Получаем ВСЕ данные пользователя из таблицы Users по telegram_id
+#     users = session.query(User).filter_by(telegram_id=user_id).all()
+#
+#     # Создаем inline-клавиатуру
+#     keyboard = InlineKeyboardMarkup(row_width=1)
+#
+#     # Добавляем кнопки для профилей всех пользователей с данным telegram_id
+#     for user in users:
+#         keyboard.add(InlineKeyboardButton(
+#             text=f"\U0001F476Участник: {user.nickname} ({user.hero_class}, {user.status})",
+#             callback_data=profile_callback.new(type="user", id=user.id)
+#         ))
+#         logging.info(f"УЧАСТНИК - {profile_callback}")  # del
+#         logging.info(f"КНОПКА - {keyboard}")
+#
+#     # получаем ВСЕ данные пользователя из таблицы Mentors по user.account_id
+#     for user in users:
+#         account_id = user.account_id
+#         mentors = session.query(Mentor).filter_by(mentor_account_id=account_id).all()
+#         for mentor in mentors:
+#             keyboard.add(InlineKeyboardButton(
+#                 text=f"\U0001F468Наставник: {mentor.mentor_nickname}",
+#                 callback_data=profile_callback.new(type="mentor", id=mentor.id)
+#             ))
+#             logging.info(f"НАСТАВНИК - {profile_callback}")  # del
+#
+#     # получаем ВСЕ данные пользователя из таблицы Admins по user.account_id
+#     for user in users:
+#         account_id = user.account_id
+#         admins = session.query(Admin).filter_by(admin_account_id=account_id).all()
+#         for admin in admins:
+#             keyboard.add(InlineKeyboardButton(
+#                 text=f"\U0001F474Офицер: {admin.admin_nickname} ({admin.admin_role}, {admin.admin_position})",
+#                 callback_data=profile_callback.new(type="admin", id=admin.id)
+#             ))
+#             logging.info(f"ОФИЦЕР - {profile_callback}")  # del
+#
+#     # Если нет ни одного профиля
+#     if not keyboard.inline_keyboard:  # Проверяем наличие кнопок
+#         await message.answer("Профиль не найден.")
+#         return
+#
+#     await message.answer("Выберите профиль:", reply_markup=keyboard)
+#
+#
+# @dp.callback_query_handler(profile_callback.filter())
+# async def handle_profile_callback(call: CallbackQuery, callback_data: dict):
+#     logging.info(f"СЛОВАРЬ ID - {callback_data}")  # del
+#     try:
+#         logging.info(f"Session is active: {session is not None}")  # del
+#         profile_type = callback_data.get(type)
+#         profile_id = int(callback_data.get(id))
+#         logging.info(f"Type: {profile_type}, User ID: {profile_id}")  # del
+#         # Извлечение данных из базы данных в зависимости от типа профиля
+#         if profile_type == "user":
+#             profile_data = session.query(User).filter_by(account_id=profile_id).first()
+#             if profile_data:
+#                 profile_text = f"Профиль {profile_type}:\n"
+#                 for field_name in (
+#                         "telegram_id", "username", "first_name", "nickname", "hero_class", "account_id", "mentor_id",
+#                         "guild", "date_registration", "status"):
+#                     field_value = getattr(profile_data, field_name, None)
+#                     if field_value is not None:
+#                         profile_text += f"{field_name.replace('_', ' ').title()}: {field_value}\n"
+#                 await call.message.answer(profile_text)
+#                 await call.answer()
+#
+#         elif profile_type == "mentor":
+#             profile_data = session.query(Mentor).filter_by(mentor_account_id=profile_id).first()
+#             if profile_data:
+#                 profile_text = f"Профиль {profile_type}:\n"
+#                 for field_name in ("mentor_nickname", "mentor_account_id", "mentor_interest", "mentor_time_online"):
+#                     field_value = getattr(profile_data, field_name, None)
+#                     if field_value is not None:
+#                         profile_text += f"{field_name.replace('_', ' ').title()}: {field_value}\n"
+#                 await call.message.answer(profile_text)
+#                 await call.answer()
+#
+#         elif profile_type == "admin":
+#             profile_data = session.query(Admin).filter_by(admin_account_id=profile_id).first()
+#             if profile_data:
+#                 profile_text = f"Профиль {profile_type}:\n"
+#                 for field_name in ("admin_nickname", "admin_account_id", "admin_role", "admin_position"):
+#                     field_value = getattr(profile_data, field_name, None)
+#                     if field_value is not None:
+#                         profile_text += f"{field_name.replace('_', ' ').title()}: {field_value}\n"
+#                 await call.message.answer(profile_text)
+#                 await call.answer()
+#
+#     except Exception as e:
+#         logging.error(f"Error handling profile callback: {e}")
+#         await call.message.answer("Произошла ошибка при обработке вашего запроса.")
+#         await call.answer()  # Отвечаем на callback запрос, чтобы убрать индикатор загрузки
+
 @dp.message_handler(lambda message: message.text == '\U0001F464Мой профиль')
-async def handle_profile(message: types.Message):
-    await show_profile_users(message)
-
-
-async def show_profile_users(message: types.Message):  # Функция показа профиля пользователя из таблицы Users
+async def show_all_profiles(message: types.Message):
     user_id = message.from_user.id
 
-    # Получаем данные пользователя из таблицы users
-    user = session.query(User).filter_by(telegram_id=user_id).first()
+    # Получаем ВСЕ данные пользователя из таблицы Users по telegram_id
+    users = session.query(User).filter_by(telegram_id=user_id).all()
 
-    if user:
-        # Формируем текст сообщения с информацией о пользователе
-        profile_text = f"**Ваш профиль:**\n"
-        profile_text += f"ID: {user.id}\n"
-        profile_text += f"Telegram ID: {user.telegram_id}\n"
-        profile_text += f"Username: {user.username}\n"
-        profile_text += f"Имя: {user.first_name}\n"
-        profile_text += f"Nickname: {user.nickname}\n"
-        profile_text += f"Класс героя: {user.hero_class}\n"
-        profile_text += f"Account ID: {user.account_id}\n"
+    # Создаем inline-клавиатуру
+    keyboard = InlineKeyboardMarkup(row_width=1)
 
+    # Добавляем кнопки для профилей всех пользователей с данным telegram_id
+    for user in users:
+        # Создайте callback_data вне цикла
+        callback_data = profile_callback.new(type="user", id=user.id)
+        keyboard.add(InlineKeyboardButton(
+            text=f"\U0001F476Участник: {user.nickname} ({user.hero_class}, {user.status})",
+            callback_data=callback_data
+        ))
+        logging.info(f"УЧАСТНИК - {profile_callback}")
+        logging.info(f"КНОПКА - {keyboard}")
 
+    # получаем ВСЕ данные пользователя из таблицы Mentors по user.account_id
+    for user in users:
+        account_id = user.account_id
+        mentors = session.query(Mentor).filter_by(mentor_account_id=account_id).all()
+        for mentor in mentors:
+            keyboard.add(InlineKeyboardButton(
+                text=f"\U0001F468Наставник: {mentor.mentor_nickname}",
+                callback_data=profile_callback.new(type="mentor", id=mentor.id)
+            ))
+            logging.info(f"НАСТАВНИК - {profile_callback}")  # del
 
-        # Получаем имя наставника из таблицы Mentors
-        if user.mentor_id:
-            mentor = session.query(Mentor).filter_by(id=user.mentor_id).first()
-            if mentor:
-                profile_text += f"Наставник: {mentor.mentor_nickname}\n"
-            else:
-                profile_text += f"Наставник: Неизвестно\n"
-        else:
-            profile_text += f"Наставник: Отсутствует\n"
+    # получаем ВСЕ данные пользователя из таблицы Admins по user.account_id
+    for user in users:
+        account_id = user.account_id
+        admins = session.query(Admin).filter_by(admin_account_id=account_id).all()
+        for admin in admins:
+            keyboard.add(InlineKeyboardButton(
+                text=f"\U0001F474Офицер: {admin.admin_nickname} ({admin.admin_role}, {admin.admin_position})",
+                callback_data=profile_callback.new(type="admin", id=admin.id)
+            ))
+            logging.info(f"ОФИЦЕР - {profile_callback}")  # del
 
-        profile_text += f"Гильдия: {user.guild}\n"
-        profile_text += f"Дата регистрации: {user.date_registration.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        profile_text += f"Cтатус: {user.status}\n"
-
-        with open(f'{user.photo}', 'rb') as profile_photo:
-            await message.answer_photo(
-                photo=profile_photo,
-                caption=profile_text
-            )
-    else:
+    # Если нет ни одного профиля
+    if not keyboard.inline_keyboard:  # Проверяем наличие кнопок
         await message.answer("Профиль не найден.")
+        return
+
+    await message.answer("Выберите профиль:", reply_markup=keyboard)
+
+
+@dp.callback_query_handler(profile_callback.filter(type=['user']))
+async def show_user_profile(call: CallbackQuery, callback_data: dict):
+    profile_type = callback_data["type"]
+    profile_id = callback_data["id"]
+    if profile_type == 'user':
+        # profile_data = session.query(User).filter_by(account_id=profile_id).first()
+        profile_data = session.query(User).filter_by(id=profile_id).first()
+        logging.error(f"Данные профиля: {profile_data}")
+        profile_photo_user = profile_data.photo
+        logging.error(f"фотография профиля: {profile_photo_user}")
+        if profile_data:
+            profile_text = f"Профиль {profile_type}:\n"
+
+            # Создаем словарь для замены mentor_id на mentor_nickname
+            field_values = {}
+            for field_name in ('telegram_id',  'username',  'first_name',  'nickname',  'hero_class',  'account_id',
+                               'mentor_id', 'guild',  'date_registration', 'status', 'photo'):
+                field_value = getattr(profile_data, field_name, None)
+                field_values[field_name] = field_value
+                if field_name == 'mentor_id' and field_value is not None:
+                    logging.info(f"полученные field_value: {field_value}")  # del
+                    # Запрос данных о менторе по ID
+                    mentor_data = session.query(Mentor).filter_by(id=field_value).first()
+                    if mentor_data:
+                        field_values['mentor_id'] = mentor_data.mentor_nickname  # Заменяем ID на никнейм
+                        logging.info(f"полученные field_value если есть mentor_data: {field_value}")  # del
+
+            # Формируем текст сообщения с заменой mentor_id
+            # profile_text += f"Telegram ID:  {field_values.get('telegram_id', 'Не указан')}\n"
+            profile_text += f"Имя пользователя:  {field_values.get('username', 'Не указан')}\n"
+            profile_text += f"Имя:  {field_values.get('first_name', 'Не указан')}\n"
+            profile_text += f"Никнейм:  {field_values.get('nickname', 'Не указан')}\n"
+            profile_text += f"Класс героя:  {field_values.get('hero_class', 'Не указан')}\n"
+            profile_text += f"ID аккаунта:  {field_values.get('account_id', 'Не указан')}\n"
+            profile_text += f"Наставник:  {field_values.get('mentor_id', 'Не указан')}\n"
+            profile_text += f"Гильдия:  {field_values.get('guild', 'Не указан')}\n"
+            profile_text += f"Дата регистрации:  {field_values.get('date_registration', 'Не указан')}\n"
+            profile_text += f"Статус:  {field_values.get('status', 'Не указан')}\n"
+
+            try:
+                with open(profile_photo_user, 'rb') as user_profile_photo:
+                    await call.message.answer_photo(
+                        photo=user_profile_photo,
+                        caption=profile_text)
+                await call.answer()
+            except Exception as e:
+                logging.error(f"При выполнении функции handle_profile_callback - произошла ошибка - [{e}]")
+                await call.answer()
+
+
+@dp.callback_query_handler(profile_callback.filter(type=['mentor']))
+async def show_mentor_profile(call: CallbackQuery, callback_data: dict):
+    profile_type = callback_data["type"]
+    logging.info(f"profile_type: {profile_type}")
+    profile_id = callback_data["id"]
+    logging.info(f"profile_id: {profile_id}")
+    if profile_type == 'mentor':
+        # profile_data_mentors = session.query(User).filter_by(account_id=profile_id).first()
+        # profile_data_mentors = session.query(User).filter_by(id=profile_id).all()
+        profile_data_mentors = session.query(Mentor).filter_by(id=profile_id).all()
+        logging.info(f"Данные профиля: {profile_data_mentors}")
+        profile_photo = profile_data_mentors.photo
+        logging.info(f"фотография профиля: {profile_photo}")
+        profile_mentor_nickname = profile_data_mentors.mentor_nickname
+        logging.info(f"nick профиля: {profile_mentor_nickname}")
+        profile_mentor_account_id = profile_data_mentors.mentor_account_id
+        logging.info(f"account_id профиля: {profile_mentor_account_id}")
+        profile_mentor_interest = profile_data_mentors.mentor_interest
+        logging.info(f"mentor_interest профиля: {profile_mentor_interest}")
+        profile_mentor_time_online = profile_data_mentors.mentor_time_online
+        logging.info(f"time_online профиля: {profile_mentor_time_online}")
+        profile_mentor_characteristic = profile_data_mentors.mentor_characteristic
+        logging.info(f"characteristic профиля: {profile_mentor_characteristic}")
+
+        if profile_data_mentors:
+            profile_text = f"Профиль {profile_type}:\n"
+            for field_name in ('mentor_nickname', 'mentor_account_id', 'mentor_interest', 'mentor_time_online',
+                               'mentor_characteristic'):
+                field_value = getattr(profile_data_mentors, field_name, None)
+                if field_value is not None:
+                    profile_text += f"{field_name.replace('_', '  ').title()}:  {field_value}\n"
+            try:
+                with open(profile_photo, 'rb') as user_profile_photo:
+                    await call.message.answer_photo(
+                        photo=user_profile_photo,
+                        caption=profile_text)
+                await call.answer()
+            except Exception as e:
+                logging.error(f"При выполнении функции update_students - произошла ошибка - [{e}]")
+                await call.answer()
 
 
 @dp.message_handler(lambda message: message.text == 'Регистрация')
@@ -331,7 +537,7 @@ async def process_account_id(message: types.Message, state: FSMContext):
 
             # Запрос фотографии
             await message.reply("Загрузите свою фотографию:"
-                                "\nИспользуйте /next - для пропуска этапа, если сейчас нет фотографии профиля")
+                                "\nИспользуйте /next - для пропуска, если сейчас нет фотографии профиля")
             await Registration.photo.set()
     elif account_id == '/cancel':
         await state.finish()
@@ -379,14 +585,6 @@ async def process_photo(message: types.Message, state: FSMContext):
             pass  # Если сообщение не было изменено, игнорируем ошибку
 
         await Registration.user_mentor_id.set()
-
-        # # Удаляем скачанный файл из файловой системы
-        # os.remove(unique_filename)
-        # logging.info(f'Файл {unique_filename} удален из файловой системы.')
-        #
-        # # Удаляем ссылку на файл из памяти
-        # del unique_filename
-        # logging.info(f'Ссылка на файл удалена из памяти.')
 
     elif message.text:
         # Проверяем на команды /cancel и /next
@@ -500,6 +698,7 @@ async def process_user_mentor_id(message: types.Message, state: FSMContext):
 class RegistrationMentors(StatesGroup):
     mentor_nickname = State()
     mentor_account_id = State()
+    mentor_photo = State()
     mentor_interest = State()
     mentor_time_online = State()
     mentor_characteristic = State()
@@ -565,11 +764,65 @@ async def process_mentor_account_id(message: types.Message, state: FSMContext):
             data['mentor_account_id'] = message.text
 
             # Запрос данных о менторе
-            await message.reply("Введите интересы ментора (через запятую):")
-            await RegistrationMentors.mentor_interest.set()
+            await message.reply("Загрузите фотографию профиля (опционально):"
+                                "\nИспользуйте /next - для пропуска, если сейчас нет фотографии профиля")
+            await RegistrationMentors.mentor_photo.set()
     elif mentor_account_id == '/cancel':
         await state.finish()
         await message.reply("Регистрация отменена!")
+
+
+# Обработчик загрузки фото для Наставника
+@dp.message_handler(content_types=['photo', 'text'], state=RegistrationMentors.mentor_photo)
+async def process_mentor_photo(message: types.Message, state: FSMContext):
+    if message.photo:
+        # Скачиваем фотографию, если сообщение не команда и не текст
+        photo = message.photo[-1]  # Берем последнюю фотографию (самую большую)
+        file_id = photo.file_id
+        file_path = await bot.get_file(file_id)
+        file_name = file_path['file_path']
+        await photo.download(destination_file=file_name)
+
+        # Определяем путь для сохранения файла
+        save_path = 'photos_profile/mentors'
+        os.makedirs(save_path, exist_ok=True)  # Создаем директорию, если ее нет
+
+        # Скачиваем файл в заданную директорию
+        await photo.download(destination_file=os.path.join(save_path, file_name))
+
+        # Генерируем уникальное имя для файла
+        unique_filename = str(uuid.uuid4()) + os.path.splitext(file_name)[1]
+
+        # Переименовываем файл
+        os.rename(os.path.join(save_path, file_name), os.path.join(save_path, unique_filename))
+
+        # Сохраняем путь к фотографии в данные состояния
+        async with state.proxy() as data:
+            data['photo'] = os.path.join(save_path, unique_filename)  # Сохраняем путь к файлу
+
+        await message.reply("Введите интересы ментора (через запятую):")
+        await RegistrationMentors.mentor_interest.set()
+
+    elif message.text:
+        # Проверяем на команды /cancel и /next
+        if message.text.lower() == '/cancel':
+            await state.finish()  # Завершаем состояние
+            await message.reply("Регистрация отменена.")
+            return
+        elif message.text.lower() == '/next':
+            await message.reply("Введите интересы ментора (через запятую):")
+            await RegistrationMentors.mentor_interest.set()
+            return
+
+        # Проверяем, является ли сообщение текстовым
+        elif message.text.lower() != '/next' or message.text.lower() != '/cancel':
+            await message.reply("На этом этапе доступна только загрузка фотографии или команды:"
+                                "\n/cancel - для отмены и выхода из регистрации"
+                                "\n/next - для пропуска этапа, если сейчас нет фотографии для профиля")
+            return
+    else:
+        # Если сообщение не текст и не фото, выводим ошибку
+        await message.reply("Неверный тип сообщения. Пожалуйста, загрузите фотографию.")
 
 
 @dp.message_handler(state=RegistrationMentors.mentor_interest)
@@ -627,6 +880,7 @@ async def process_mentor_characteristic(message: types.Message, state: FSMContex
             mentor = Mentor(
                 mentor_account_id=data['mentor_account_id'],
                 mentor_nickname=data['mentor_nickname'],
+                mentor_photo=data['photo'],
                 mentor_interest=data['mentor_interest'],
                 mentor_number_of_students=0,
                 mentor_time_online=data['mentor_time_online'],
@@ -651,7 +905,9 @@ async def process_mentor_characteristic(message: types.Message, state: FSMContex
 class RegistrationAdmins(StatesGroup):
     admin_nickname = State()
     admin_account_id = State()
+    admin_photo = State()
     admin_role = State()
+    admin_position = State()
 
 
 # Команда регистрации Офицеров гильдии
@@ -709,6 +965,42 @@ async def process_admin_account_id(message: types.Message, state: FSMContext):
     if admin_account_id != '/cancel':
         async with state.proxy() as data:
             data['admin_account_id'] = message.text
+        await message.reply("Загрузите фотографию профиля (опционально):"
+                            "\nИспользуйте /next - для пропуска, если сейчас нет фотографии профиля")
+        await RegistrationAdmins.admin_photo.set()
+    elif admin_account_id == '/cancel':
+        await state.finish()
+        await message.reply("Регистрация отменена!")
+
+
+# Обработчик загрузки фото для администратора
+@dp.message_handler(content_types=['photo', 'text'], state=RegistrationAdmins.admin_photo)
+async def process_admin_photo(message: types.Message, state: FSMContext):
+    if message.photo:
+        # Скачиваем фотографию, если сообщение не команда и не текст
+        photo = message.photo[-1]  # Берем последнюю фотографию (самую большую)
+        file_id = photo.file_id
+        file_path = await bot.get_file(file_id)
+        file_name = file_path['file_path']
+        await photo.download(destination_file=file_name)
+
+        # Определяем путь для сохранения файла
+        save_path = 'photos_profile/admins'
+        os.makedirs(save_path, exist_ok=True)  # Создаем директорию, если ее нет
+
+        # Скачиваем файл в заданную директорию
+        await photo.download(destination_file=os.path.join(save_path, file_name))
+
+        # Генерируем уникальное имя для файла
+        unique_filename = str(uuid.uuid4()) + os.path.splitext(file_name)[1]
+
+        # Переименовываем файл
+        os.rename(os.path.join(save_path, file_name), os.path.join(save_path, unique_filename))
+
+        # Сохраняем путь к фотографии в данные состояния
+        async with state.proxy() as data:
+            data['photo'] = os.path.join(save_path, unique_filename)  # Сохраняем путь к файлу
+
         await message.reply("Выберите роль администратора:",
                             reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(
                                 types.KeyboardButton("Управляющий"),
@@ -716,9 +1008,32 @@ async def process_admin_account_id(message: types.Message, state: FSMContext):
                                 types.KeyboardButton("\U0001F451Глава")
                             ))
         await RegistrationAdmins.admin_role.set()
-    elif admin_account_id == '/cancel':
-        await state.finish()
-        await message.reply("Регистрация отменена!")
+
+    elif message.text:
+        # Проверяем на команды /cancel и /next
+        if message.text.lower() == '/cancel':
+            await state.finish()  # Завершаем состояние
+            await message.reply("Регистрация отменена.")
+            return
+        elif message.text.lower() == '/next':
+            await message.reply("Выберите роль администратора:",
+                                reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(
+                                    types.KeyboardButton("Управляющий"),
+                                    types.KeyboardButton("Заместитель"),
+                                    types.KeyboardButton("\U0001F451Глава")
+                                ))
+            await RegistrationAdmins.admin_role.set()
+            return
+
+        # Проверяем, является ли сообщение текстовым
+        elif message.text.lower() != '/next' or message.text.lower() != '/cancel':
+            await message.reply("На этом этапе доступна только загрузка фотографии или команды:"
+                                "\n/cancel - для отмены и выхода из регистрации"
+                                "\n/next - для пропуска этапа, если сейчас нет фотографии для профиля")
+            return
+    else:
+        # Если сообщение не текст и не фото, выводим ошибку
+        await message.reply("Неверный тип сообщения. Пожалуйста, загрузите фотографию.")
 
 
 @dp.message_handler(state=RegistrationAdmins.admin_role)
@@ -745,24 +1060,46 @@ async def process_admin_role(message: types.Message, state: FSMContext):
                                     f"Введите другую роль или используйте команду /cancel для выхода из регистрации.")
                 return
 
-                # Сохраняем данные в БД
-        admin = Admin(
-            admin_account_id=data['admin_account_id'],
-            admin_nickname=data['admin_nickname'],
-            admin_role=data['admin_role']
-        )
-        session.add(admin)
-        session.commit()
-        session.close()  # Закрываем сеанс с БД после завершения регистрации
-
-        logging.info(
-            f"Администратор {message.from_user.first_name} (username:{message.from_user.username}, "
-            f"ID: {message.from_user.id}) успешно завершил регистрацию"
-        )
-
-        await message.reply("Администратор успешно зарегистрирован!")
-        await state.finish()
+            # Переходим к вводу должности
+            await message.reply("Введите должность администратора:")
+            await RegistrationAdmins.admin_position.set()
     elif admin_role == '/cancel':
+        await state.finish()
+        await message.reply("Регистрация отменена!")
+
+
+@dp.message_handler(state=RegistrationAdmins.admin_position)
+async def process_admin_position(message: types.Message, state: FSMContext):
+    admin_position = message.text
+
+    if admin_position.startswith('/') and admin_position != '/cancel':
+        await message.reply("Неверно. Должность не может начинаться с символа /."
+                            "\nВведите должность без символа /")
+        return  # Выход из обработчика, если должность неверна
+
+    if admin_position != '/cancel':
+        async with state.proxy() as data:
+            data['admin_position'] = admin_position
+
+            # Сохраняем данные в БД
+            admin = Admin(
+                admin_account_id=data['admin_account_id'],
+                admin_nickname=data['admin_nickname'],
+                admin_role=data['admin_role'],
+                admin_position=data['admin_position']
+            )
+            session.add(admin)
+            session.commit()
+            session.close()  # Закрываем сеанс с БД после завершения регистрации
+
+            logging.info(
+                f"Администратор {message.from_user.first_name} (username:{message.from_user.username}, "
+                f"ID: {message.from_user.id}) успешно завершил регистрацию"
+            )
+
+            await message.reply("Администратор успешно зарегистрирован!")
+            await state.finish()
+    elif admin_position == '/cancel':
         await state.finish()
         await message.reply("Регистрация отменена!")
 
