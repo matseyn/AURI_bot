@@ -1,2 +1,2 @@
-aiogram~=2.25
+aiogram~=2.25.2
 SQLAlchemy~=2.0.30
