@@ -16,4 +16,5 @@
 
 
 Текущая схема БД 
-![data-base-from-telegram-bot-poi_160 (2)](https://github.com/matseyn/AURI_bot/assets/165843276/ff9325f8-96af-4f07-bfbb-7aeac9335eb8)
+
+![ERD_auri_2024-06-12T18_08_34 539Z](https://github.com/matseyn/AURI_bot/assets/165843276/30f554a9-e020-42c9-9e3f-fe57b5d226bd)
