@@ -130,107 +130,9 @@ async def start_command(message: types.Message):
 
 # Команда показа профиля пользователя
 profile_callback = CallbackData("profile", "type", "id")  # Создаем CallbackData
-logging.info(f"ДО ПОКАЗА КНОПОК - {profile_callback}")  # del
 
 
-# @dp.message_handler(lambda message: message.text == '\U0001F464Мой профиль')
-# async def show_all_profiles(message: types.Message):
-#     user_id = message.from_user.id
-#
-#     # Получаем ВСЕ данные пользователя из таблицы Users по telegram_id
-#     users = session.query(User).filter_by(telegram_id=user_id).all()
-#
-#     # Создаем inline-клавиатуру
-#     keyboard = InlineKeyboardMarkup(row_width=1)
-#
-#     # Добавляем кнопки для профилей всех пользователей с данным telegram_id
-#     for user in users:
-#         keyboard.add(InlineKeyboardButton(
-#             text=f"\U0001F476Участник: {user.nickname} ({user.hero_class}, {user.status})",
-#             callback_data=profile_callback.new(type="user", id=user.id)
-#         ))
-#         logging.info(f"УЧАСТНИК - {profile_callback}")  # del
-#         logging.info(f"КНОПКА - {keyboard}")
-#
-#     # получаем ВСЕ данные пользователя из таблицы Mentors по user.account_id
-#     for user in users:
-#         account_id = user.account_id
-#         mentors = session.query(Mentor).filter_by(mentor_account_id=account_id).all()
-#         for mentor in mentors:
-#             keyboard.add(InlineKeyboardButton(
-#                 text=f"\U0001F468Наставник: {mentor.mentor_nickname}",
-#                 callback_data=profile_callback.new(type="mentor", id=mentor.id)
-#             ))
-#             logging.info(f"НАСТАВНИК - {profile_callback}")  # del
-#
-#     # получаем ВСЕ данные пользователя из таблицы Admins по user.account_id
-#     for user in users:
-#         account_id = user.account_id
-#         admins = session.query(Admin).filter_by(admin_account_id=account_id).all()
-#         for admin in admins:
-#             keyboard.add(InlineKeyboardButton(
-#                 text=f"\U0001F474Офицер: {admin.admin_nickname} ({admin.admin_role}, {admin.admin_position})",
-#                 callback_data=profile_callback.new(type="admin", id=admin.id)
-#             ))
-#             logging.info(f"ОФИЦЕР - {profile_callback}")  # del
-#
-#     # Если нет ни одного профиля
-#     if not keyboard.inline_keyboard:  # Проверяем наличие кнопок
-#         await message.answer("Профиль не найден.")
-#         return
-#
-#     await message.answer("Выберите профиль:", reply_markup=keyboard)
-#
-#
-# @dp.callback_query_handler(profile_callback.filter())
-# async def handle_profile_callback(call: CallbackQuery, callback_data: dict):
-#     logging.info(f"СЛОВАРЬ ID - {callback_data}")  # del
-#     try:
-#         logging.info(f"Session is active: {session is not None}")  # del
-#         profile_type = callback_data.get(type)
-#         profile_id = int(callback_data.get(id))
-#         logging.info(f"Type: {profile_type}, User ID: {profile_id}")  # del
-#         # Извлечение данных из базы данных в зависимости от типа профиля
-#         if profile_type == "user":
-#             profile_data = session.query(User).filter_by(account_id=profile_id).first()
-#             if profile_data:
-#                 profile_text = f"Профиль {profile_type}:\n"
-#                 for field_name in (
-#                         "telegram_id", "username", "first_name", "nickname", "hero_class", "account_id", "mentor_id",
-#                         "guild", "date_registration", "status"):
-#                     field_value = getattr(profile_data, field_name, None)
-#                     if field_value is not None:
-#                         profile_text += f"{field_name.replace('_', ' ').title()}: {field_value}\n"
-#                 await call.message.answer(profile_text)
-#                 await call.answer()
-#
-#         elif profile_type == "mentor":
-#             profile_data = session.query(Mentor).filter_by(mentor_account_id=profile_id).first()
-#             if profile_data:
-#                 profile_text = f"Профиль {profile_type}:\n"
-#                 for field_name in ("mentor_nickname", "mentor_account_id", "mentor_interest", "mentor_time_online"):
-#                     field_value = getattr(profile_data, field_name, None)
-#                     if field_value is not None:
-#                         profile_text += f"{field_name.replace('_', ' ').title()}: {field_value}\n"
-#                 await call.message.answer(profile_text)
-#                 await call.answer()
-#
-#         elif profile_type == "admin":
-#             profile_data = session.query(Admin).filter_by(admin_account_id=profile_id).first()
-#             if profile_data:
-#                 profile_text = f"Профиль {profile_type}:\n"
-#                 for field_name in ("admin_nickname", "admin_account_id", "admin_role", "admin_position"):
-#                     field_value = getattr(profile_data, field_name, None)
-#                     if field_value is not None:
-#                         profile_text += f"{field_name.replace('_', ' ').title()}: {field_value}\n"
-#                 await call.message.answer(profile_text)
-#                 await call.answer()
-#
-#     except Exception as e:
-#         logging.error(f"Error handling profile callback: {e}")
-#         await call.message.answer("Произошла ошибка при обработке вашего запроса.")
-#         await call.answer()  # Отвечаем на callback запрос, чтобы убрать индикатор загрузки
-
+# Показываем профиль пользователей РАБОЧИЙ
 @dp.message_handler(lambda message: message.text == '\U0001F464Мой профиль')
 async def show_all_profiles(message: types.Message):
     user_id = message.from_user.id
@@ -282,7 +184,9 @@ async def show_all_profiles(message: types.Message):
     await message.answer("Выберите профиль:", reply_markup=keyboard)
 
 
-@dp.callback_query_handler(profile_callback.filter(type=['user']))
+# Показываем выбранный профиль пользователя
+# @dp.callback_query_handler(profile_callback.filter(type=['user']))
+@dp.callback_query_handler(profile_callback.filter())
 async def show_user_profile(call: CallbackQuery, callback_data: dict):
     profile_type = callback_data["type"]
     profile_id = callback_data["id"]
@@ -297,8 +201,8 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
 
             # Создаем словарь для замены mentor_id на mentor_nickname
             field_values = {}
-            for field_name in ('telegram_id',  'username',  'first_name',  'nickname',  'hero_class',  'account_id',
-                               'mentor_id', 'guild',  'date_registration', 'status', 'photo'):
+            for field_name in ('telegram_id', 'username', 'first_name', 'nickname', 'hero_class', 'account_id',
+                               'mentor_id', 'guild', 'date_registration', 'status', 'photo'):
                 field_value = getattr(profile_data, field_name, None)
                 field_values[field_name] = field_value
                 if field_name == 'mentor_id' and field_value is not None:
@@ -307,6 +211,7 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                     mentor_data = session.query(Mentor).filter_by(id=field_value).first()
                     if mentor_data:
                         field_values['mentor_id'] = mentor_data.mentor_nickname  # Заменяем ID на никнейм
+                        field_values['mentor_account_id'] = mentor_data.mentor_account_id  # Получаем mentor_account_id
                         logging.info(f"полученные field_value если есть mentor_data: {field_value}")  # del
 
             # Формируем текст сообщения с заменой mentor_id
@@ -317,8 +222,32 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
             profile_text += f"Класс героя:  {field_values.get('hero_class', 'Не указан')}\n"
             profile_text += f"ID аккаунта:  {field_values.get('account_id', 'Не указан')}\n"
             profile_text += f"Наставник:  {field_values.get('mentor_id', 'Не указан')}\n"
+
+            # Получение связи с наставником
+            mentor_account_id = field_values.get('mentor_account_id')
+            if mentor_account_id:
+                mentor_user_data = session.query(User).filter_by(account_id=mentor_account_id).first()
+                if mentor_user_data:
+                    mentor_username = mentor_user_data.username
+                    profile_text += f"Связь с наставником:  @{mentor_username}\n"
+                else:
+                    profile_text += f"Связь с наставником:  Не найдена\n"
+            else:
+                profile_text += f"Связь с наставником:  Не указана\n"
+
             profile_text += f"Гильдия:  {field_values.get('guild', 'Не указан')}\n"
-            profile_text += f"Дата регистрации:  {field_values.get('date_registration', 'Не указан')}\n"
+
+            # Вычисление времени с момента регистрации
+            registration_date = field_values.get('date_registration')
+            if registration_date:
+                registration_date = datetime.strptime(registration_date.strftime('%Y-%m-%d'), '%Y-%m-%d')
+                time_delta = datetime.now() - registration_date
+                time_delta_str = f"{time_delta.days} дней {time_delta.seconds // 3600} часов"
+                profile_text += f"Дата регистрации:  {registration_date.strftime('%d-%m-%Y')}\n"
+                profile_text += f"В системе:  {time_delta_str}\n"
+            else:
+                profile_text += f"Дата регистрации:  Не указана\n"
+
             profile_text += f"Статус:  {field_values.get('status', 'Не указан')}\n"
 
             try:
@@ -328,58 +257,100 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                         caption=profile_text)
                 await call.answer()
             except Exception as e:
-                logging.error(f"При выполнении функции handle_profile_callback - произошла ошибка - [{e}]")
+                logging.error(f"При поиске фотографии в Users.photo - произошла ошибка - [{e}]")
                 await call.answer()
 
-
-@dp.callback_query_handler(profile_callback.filter(type=['mentor']))
-async def show_mentor_profile(call: CallbackQuery, callback_data: dict):
-    profile_type = callback_data["type"]
-    logging.info(f"profile_type: {profile_type}")
-    profile_id = callback_data["id"]
-    logging.info(f"profile_id: {profile_id}")
-    if profile_type == 'mentor':
-        # profile_data_mentors = session.query(User).filter_by(account_id=profile_id).first()
-        # profile_data_mentors = session.query(User).filter_by(id=profile_id).all()
-        profile_data_mentors = session.query(Mentor).filter_by(id=profile_id).all()
-        logging.info(f"Данные профиля: {profile_data_mentors}")
-        profile_photo = profile_data_mentors.photo
-        logging.info(f"фотография профиля: {profile_photo}")
-        profile_mentor_nickname = profile_data_mentors.mentor_nickname
-        logging.info(f"nick профиля: {profile_mentor_nickname}")
-        profile_mentor_account_id = profile_data_mentors.mentor_account_id
-        logging.info(f"account_id профиля: {profile_mentor_account_id}")
-        profile_mentor_interest = profile_data_mentors.mentor_interest
-        logging.info(f"mentor_interest профиля: {profile_mentor_interest}")
-        profile_mentor_time_online = profile_data_mentors.mentor_time_online
-        logging.info(f"time_online профиля: {profile_mentor_time_online}")
-        profile_mentor_characteristic = profile_data_mentors.mentor_characteristic
-        logging.info(f"characteristic профиля: {profile_mentor_characteristic}")
-
+    # Получаем профиль Наставника
+    elif profile_type == 'mentor':
+        profile_data_mentors = session.query(Mentor).filter_by(id=profile_id).first()
         if profile_data_mentors:
-            profile_text = f"Профиль {profile_type}:\n"
-            for field_name in ('mentor_nickname', 'mentor_account_id', 'mentor_interest', 'mentor_time_online',
-                               'mentor_characteristic'):
-                field_value = getattr(profile_data_mentors, field_name, None)
-                if field_value is not None:
-                    profile_text += f"{field_name.replace('_', '  ').title()}:  {field_value}\n"
-            try:
-                with open(profile_photo, 'rb') as user_profile_photo:
-                    await call.message.answer_photo(
-                        photo=user_profile_photo,
-                        caption=profile_text)
+            profile_text_mentor = f"Профиль {profile_type}:\n"
+
+            # Получение данных о связи с ментором
+            mentor_account_id = profile_data_mentors.mentor_account_id
+            if mentor_account_id:
+                mentor_user_data = session.query(User).filter_by(account_id=mentor_account_id).first()
+                if mentor_user_data:
+                    mentor_username = mentor_user_data.username
+                    profile_text_mentor += f"Связь: @{mentor_username}\n"
+                else:
+                    profile_text_mentor += f"Связь: Не найдена\n"
+            else:
+                profile_text_mentor += f"Связь: Не указана\n"
+
+            # Вывод остальных данных о менторе
+            profile_text_mentor += f"Ник: {profile_data_mentors.mentor_nickname}\n"
+
+            # Получение класса героя ментора
+            if mentor_account_id:
+                mentor_user_data = session.query(User).filter_by(account_id=mentor_account_id).first()
+                if mentor_user_data:
+                    profile_text_mentor += f"Класс: {mentor_user_data.hero_class}\n"
+                else:
+                    profile_text_mentor += f"Класс: Не найдена\n"
+            else:
+                profile_text_mentor += f"Класс: Не указан\n"
+
+            profile_text_mentor += f"Знает: {profile_data_mentors.mentor_interest}\n"
+            profile_text_mentor += f"Количество учеников: {profile_data_mentors.mentor_number_of_students}\n"
+            profile_text_mentor += f"Время онлайн: {profile_data_mentors.mentor_time_online}\n"
+            profile_text_mentor += f"Характеристика: {profile_data_mentors.mentor_characteristic}\n"
+
+            # Поиск фотографии ментора (если есть)
+            profile_photo_mentor = profile_data_mentors.mentor_photo  # Предполагается, что у Mentor есть поле "photo"
+            if profile_photo_mentor:
+                try:
+                    with open(profile_photo_mentor, 'rb') as mentor_profile_photo:
+                        await call.message.answer_photo(
+                            photo=mentor_profile_photo,
+                            caption=profile_text_mentor)
+                    await call.answer()
+                except Exception as e:
+                    logging.error(f"При поиске фотографии в Mentors.mentor_photo - произошла ошибка - [{e}]")
+                    await call.answer()
+            else:
+                await call.message.answer(profile_text_mentor)
                 await call.answer()
-            except Exception as e:
-                logging.error(f"При выполнении функции update_students - произошла ошибка - [{e}]")
+        else:
+            await call.message.answer("Профиль Наставника не найден.")
+            await call.answer()
+
+    # Получаем профиль Наставника
+    elif profile_type == 'admin':
+        profile_data_admin = session.query(Admin).filter_by(id=profile_id).first()
+        if profile_data_admin:
+            profile_text_admin = f"Профиль {profile_type}:\n"
+            profile_text_admin += f"Ник: {profile_data_admin.admin_nickname}\n"
+            profile_text_admin += f"Роль: {profile_data_admin.admin_role}\n"
+            profile_text_admin += f"Должность: {profile_data_admin.admin_position}\n"
+            # Поиск фотографии Админа (если есть)
+            profile_photo_admin = profile_data_admin.admin_photo
+            if profile_photo_admin:
+                try:
+                    with open(profile_photo_admin, 'rb') as admin_profile_photo:
+                        await call.message.answer_photo(
+                            photo=admin_profile_photo,
+                            caption=profile_text_admin)
+                    await call.answer()
+                except Exception as e:
+                    logging.error(f"При поиске фотографии в Admins.admin_photo - произошла ошибка - [{e}]")
+                    await call.answer()
+            else:
+                await call.message.answer(profile_text_admin)
                 await call.answer()
+        else:
+            await call.message.answer("Профиль Администратора не найден.")
+            await call.answer()
 
 
+# Обработка кнопки Регистрация
 @dp.message_handler(lambda message: message.text == 'Регистрация')
 async def registration_start(message: types.Message):
     buttons = [
-        types.KeyboardButton('/reg', description='Регистрация пользователя'),
-        types.KeyboardButton('/reg_mentors', description='Регистрация как Наставник'),
-        types.KeyboardButton('/reg_admins', description='Регистрация Админа'),
+        types.KeyboardButton('Регистрация участника', description='Регистрация пользователя'),  # /reg
+        types.KeyboardButton('Регистрация Наставника', description='Регистрация как Наставник'),  # /reg_mentors
+        types.KeyboardButton('Регистрация Админа', description='Регистрация Админа'),  # /reg_admins
+        types.KeyboardButton('\U0001F50DПоиск наставника', description='Найти свободных Наставников'),
         types.KeyboardButton('\U0001F519Назад', description='Вернуться к предыдущему меню')
     ]
 
@@ -414,11 +385,42 @@ async def back_to_start(message: types.Message):
     await message.answer('Выберите действие:', reply_markup=markup)
 
 
+# команда поиска свободный Наставников
+# @dp.message_handler(commands=['show_free_mentors'])
+@dp.message_handler(lambda message: message.text.replace('\U0001F50D', '') == 'Поиск наставника')
+async def show_free_mentors(message: types.Message):
+    mentors_data = session.query(Mentor).filter(Mentor.mentor_number_of_students <= 2).all()
+    if mentors_data:
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        for mentor in mentors_data:
+            mentor_id = mentor.id
+            mentor_nickname = mentor.mentor_nickname
+
+            # Получение класса героя и знаний ментора
+            mentor_account_id = mentor.mentor_account_id
+            mentor_interest = mentor.mentor_interest
+            mentor_user_data = session.query(User).filter_by(account_id=mentor_account_id).first()
+            if mentor_user_data:
+                hero_class = mentor_user_data.hero_class
+            else:
+                hero_class = "Не указан"
+
+            button = types.InlineKeyboardButton(
+                text=f"Наставник: {mentor_nickname} ({hero_class}) - {mentor_interest}",
+                callback_data=f"profile:mentor:{mentor_id}"
+            )
+            keyboard.insert(button)
+
+        await message.answer("Выберите свободного наставника:", reply_markup=keyboard)
+    else:
+        await message.answer("В данный момент нет свободных наставников.")
+
 '''КОМАНДЫ ДЛЯ РЕГИСТРАЦИИ'''
 
 
 # Команда регистрации Пользователей
-@dp.message_handler(commands=['reg'], state=None)
+# @dp.message_handler(commands=['reg'], state=None)
+@dp.message_handler(lambda message: message.text == 'Регистрация пользователя')
 async def registration_start(message: types.Message, state: FSMContext):
     # Автоматически получаем nickname и id из информации об аккаунте telegram user
     username = message.from_user.first_name
@@ -680,12 +682,29 @@ async def process_user_mentor_id(message: types.Message, state: FSMContext):
                     .mentor_number_of_students
                 logging.info("Функция update_students - успешно выполнена")
                 # logging.info(f"У {mentor_nickname} стало - {new_students_count}")  # for Debug -> delete after
-                session.close()  # Закрываем сеанс с БД после завершения регистрации
+                # session.close()  # Закрываем сеанс с БД после завершения регистрации
                 # logging.info(f"Наставник {mentor_nickname} (ID: {mentor.id}) - "
                 #              f"Количество подопечных: {old_students_count} -> {new_students_count}")
                 change_students_member_text = f"Наставник {mentor_nickname} (ID: {mentor.id}) - " \
                                               f"Количество подопечных: {old_students_count} -> {new_students_count}"
                 await bot.send_message(config.id_leader, change_students_member_text)
+
+                # Отправка сообщения выбранному ментору
+                mentor_account_id = mentor.mentor_account_id
+                if mentor_account_id:
+                    mentor_user_data = session.query(User).filter_by(account_id=mentor_account_id).first()
+                    if mentor_user_data:
+                        mentor_telegram_id = mentor_user_data.telegram_id
+                        if mentor_telegram_id is not None and mentor_telegram_id != "":
+                            try:
+                                mentor_username = mentor_user_data.username
+                                mentor_message = f"Участник {user.nickname} с гильдии {user.guild} " \
+                                                 f"выбрал Вас в качестве своего наставника." \
+                                                 f"\n\nДля связи с учеником используйте @{mentor_username}"
+                                await bot.send_message(mentor_telegram_id, mentor_message)
+                            except Exception as e:
+                                logging.error(f"При отправке сообщения Наставнику - произошла ошибка - [{e}]")
+                session.close()  # Закрытие сессии после отправки сообщения
             except Exception as e:
                 logging.error(f"При выполнении функции update_students - произошла ошибка - [{e}]")
                 session.close()  # Закрываем сеанс с БД после завершения регистрации
@@ -705,7 +724,8 @@ class RegistrationMentors(StatesGroup):
 
 
 # Команда регистрации Наставников
-@dp.message_handler(commands=['reg_mentors'], state=None)
+# @dp.message_handler(commands=['reg_mentors'], state=None)
+@dp.message_handler(lambda message: message.text == 'Регистрация Наставника')
 async def registration_mentors_start(message: types.Message):
     await message.reply("Введите свой никнейм:"
                         "\n\nДля отмены или выхода из регистрации введи /cancel")
@@ -911,7 +931,8 @@ class RegistrationAdmins(StatesGroup):
 
 
 # Команда регистрации Офицеров гильдии
-@dp.message_handler(commands=['reg_admins'], state=None)
+# @dp.message_handler(commands=['reg_admins'], state=None)
+@dp.message_handler(lambda message: message.text == 'Регистрация Админа')
 async def registration_admins_start(message: types.Message):
     await message.reply("Введите свой никнейм:"
                         "\n\nДля отмены или выхода из регистрации введи /cancel")
@@ -999,7 +1020,7 @@ async def process_admin_photo(message: types.Message, state: FSMContext):
 
         # Сохраняем путь к фотографии в данные состояния
         async with state.proxy() as data:
-            data['photo'] = os.path.join(save_path, unique_filename)  # Сохраняем путь к файлу
+            data['admin_photo'] = os.path.join(save_path, unique_filename)  # Сохраняем путь к файлу
 
         await message.reply("Выберите роль администратора:",
                             reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(
@@ -1086,7 +1107,8 @@ async def process_admin_position(message: types.Message, state: FSMContext):
                 admin_account_id=data['admin_account_id'],
                 admin_nickname=data['admin_nickname'],
                 admin_role=data['admin_role'],
-                admin_position=data['admin_position']
+                admin_position=data['admin_position'],
+                admin_photo=data['admin_photo']
             )
             session.add(admin)
             session.commit()
