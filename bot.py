@@ -131,6 +131,8 @@ async def start_command(message: types.Message):
 # Команда показа профиля пользователя
 profile_callback = CallbackData("profile", "type", "id")  # Создаем CallbackData
 
+edit_profile_callback = CallbackData('change', 'action', 'type', 'id')
+
 
 # Показываем профиль пользователей РАБОЧИЙ
 @dp.message_handler(lambda message: message.text == '\U0001F464Мой профиль')
@@ -151,8 +153,6 @@ async def show_all_profiles(message: types.Message):
             text=f"\U0001F476Участник: {user.nickname} ({user.hero_class}, {user.status})",
             callback_data=callback_data
         ))
-        logging.info(f"УЧАСТНИК - {profile_callback}")
-        logging.info(f"КНОПКА - {keyboard}")
 
     # получаем ВСЕ данные пользователя из таблицы Mentors по user.account_id
     for user in users:
@@ -163,7 +163,6 @@ async def show_all_profiles(message: types.Message):
                 text=f"\U0001F468Наставник: {mentor.mentor_nickname}",
                 callback_data=profile_callback.new(type="mentor", id=mentor.id)
             ))
-            logging.info(f"НАСТАВНИК - {profile_callback}")  # del
 
     # получаем ВСЕ данные пользователя из таблицы Admins по user.account_id
     for user in users:
@@ -174,7 +173,6 @@ async def show_all_profiles(message: types.Message):
                 text=f"\U0001F474Офицер: {admin.admin_nickname} ({admin.admin_role}, {admin.admin_position})",
                 callback_data=profile_callback.new(type="admin", id=admin.id)
             ))
-            logging.info(f"ОФИЦЕР - {profile_callback}")  # del
 
     # Если нет ни одного профиля
     if not keyboard.inline_keyboard:  # Проверяем наличие кнопок
@@ -193,9 +191,7 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
     if profile_type == 'user':
         # profile_data = session.query(User).filter_by(account_id=profile_id).first()
         profile_data = session.query(User).filter_by(id=profile_id).first()
-        logging.error(f"Данные профиля: {profile_data}")
         profile_photo_user = profile_data.photo
-        logging.error(f"фотография профиля: {profile_photo_user}")
         if profile_data:
             profile_text = f"Профиль {profile_type}:\n"
 
@@ -206,7 +202,6 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                 field_value = getattr(profile_data, field_name, None)
                 field_values[field_name] = field_value
                 if field_name == 'mentor_id' and field_value is not None:
-                    logging.info(f"полученные field_value: {field_value}")  # del
                     # Запрос данных о менторе по ID
                     mentor_data = session.query(Mentor).filter_by(id=field_value).first()
                     if mentor_data:
@@ -250,11 +245,24 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
 
             profile_text += f"Статус:  {field_values.get('status', 'Не указан')}\n"
 
+            reply_markup = InlineKeyboardMarkup(row_width=1).add(
+                InlineKeyboardButton(
+                    text="Изменить Никнейм",
+                    callback_data=edit_profile_callback.new(action='nickname', type='nickname', id=profile_id)
+                ),
+                InlineKeyboardButton(
+                    text="Изменить Фото",
+                    callback_data=edit_profile_callback.new(action='photo', type='photo', id=profile_id)
+                )
+            )
+
             try:
                 with open(profile_photo_user, 'rb') as user_profile_photo:
                     await call.message.answer_photo(
                         photo=user_profile_photo,
-                        caption=profile_text)
+                        caption=profile_text,
+                        reply_markup=reply_markup
+                        )
                 await call.answer()
             except Exception as e:
                 logging.error(f"При поиске фотографии в Users.photo - произошла ошибка - [{e}]")
@@ -341,6 +349,64 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
         else:
             await call.message.answer("Профиль Администратора не найден.")
             await call.answer()
+
+
+class UserStates(StatesGroup):
+    nickname_state = State()
+
+
+@dp.callback_query_handler(edit_profile_callback.filter())
+async def handle_change(call: types.CallbackQuery, callback_data: dict):
+    edit_type = callback_data["type"]
+    profile_id = callback_data["id"]
+    logging.info(f"Тип изменения профиля: {edit_type} - id_user [{profile_id}]")
+    if callback_data['action'] == 'nickname':
+        await call.message.answer("Введи новый ник")
+        await dp.current_state().set_state(UserStates.nickname_state)
+        # Сохраняем profile_id в контексте
+        await dp.current_state().update_data(profile_id=profile_id)
+
+    elif callback_data['action'] == 'photo':
+        # Handle photo change logic here
+        await call.answer("Изменить Фото - в разработке")
+
+
+@dp.message_handler(state=UserStates.nickname_state)
+async def handle_nickname_input(message: types.Message, state: FSMContext):
+    new_nickname = message.text
+    # Проверяем, что предыдущее сообщение было запросом на ввод никнейма
+    if new_nickname.startswith('/'):
+        await message.reply("Неверно. Ник не должен начинаться с символа /")
+        return  # Выход из обработчика, если ник неверный
+    else:
+        try:
+            data = await state.get_data()
+            profile_id = data.get('profile_id')
+            user = session.query(User).filter_by(id=profile_id).first()
+
+            if user:
+                user.nickname = new_nickname
+                session.commit()
+                # Обновление Nickname в table Mentors и Admins
+                mentor = session.query(Mentor).filter_by(mentor_account_id=user.account_id).first()
+                if mentor:
+                    mentor.mentor_nickname = new_nickname
+                    session.commit()
+
+                admin = session.query(Admin).filter_by(admin_account_id=user.account_id).first()
+                if admin:
+                    admin.admin_nickname = new_nickname
+                    session.commit()
+
+                await state.finish()
+                await message.reply(f"Ваш новый ник: {new_nickname}"
+                                    f"\nДля продолжения работы нажмите /start")
+            else:
+                await message.reply(f"В процессе смены никнейма произошла ошибка. Обратитесь к Администратору")
+        except Exception as e:
+            await message.reply(f"Невозможно сменить никнейм из-за внутренней ошибки [handle_nickname_input]"
+                                f"Обратитесь к Администратору")
+            logging.error(f"Ошибка при изменении никнейма[handle_nickname_input]  -  [{e}]")
 
 
 # Обработка кнопки Регистрация
