@@ -372,7 +372,7 @@ async def handle_change(call: types.CallbackQuery, callback_data: dict):
 
 
 @dp.message_handler(state=UserStates.nickname_state)
-async def handle_nickname_input(message: types.Message, state: FSMContext):
+async def change_nickname(message: types.Message, state: FSMContext):
     new_nickname = message.text
     # Проверяем, что предыдущее сообщение было запросом на ввод никнейма
     if new_nickname.startswith('/'):
