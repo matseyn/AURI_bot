@@ -134,7 +134,7 @@ profile_callback = CallbackData("profile", "type", "id")  # Создаем Callb
 edit_profile_callback = CallbackData('change', 'action', 'type', 'id')
 
 
-# Показываем профиль пользователей РАБОЧИЙ
+# Показываем профиль пользователей
 @dp.message_handler(lambda message: message.text == '\U0001F464Мой профиль')
 async def show_all_profiles(message: types.Message):
     user_id = message.from_user.id
@@ -244,7 +244,7 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                 profile_text += f"Дата регистрации:  Не указана\n"
 
             profile_text += f"Статус:  {field_values.get('status', 'Не указан')}\n"
-
+            # Добавляем кнопки для изменения профиля
             reply_markup = InlineKeyboardMarkup(row_width=1).add(
                 InlineKeyboardButton(
                     text="Изменить Никнейм",
@@ -252,21 +252,62 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                 ),
                 InlineKeyboardButton(
                     text="Изменить Фото",
-                    callback_data=edit_profile_callback.new(action='photo', type='photo', id=profile_id)
+                    callback_data=edit_profile_callback.new(action='photo', type=profile_type, id=profile_id)
+                ),
+                InlineKeyboardButton(
+                    text="Сменить класс",
+                    callback_data=edit_profile_callback.new(action='change_hero_class', type=profile_type,
+                                                            id=profile_id)
+                ),
+                InlineKeyboardButton(
+                    text="Заявка на отпуск",
+                    callback_data=edit_profile_callback.new(action='vacation', type=profile_type,
+                                                            id=profile_id)
                 )
             )
 
-            try:
-                with open(profile_photo_user, 'rb') as user_profile_photo:
-                    await call.message.answer_photo(
-                        photo=user_profile_photo,
-                        caption=profile_text,
-                        reply_markup=reply_markup
+            if profile_photo_user:
+                try:
+                    with open(profile_photo_user, 'rb') as user_profile_photo:
+                        await call.message.answer_photo(
+                            photo=user_profile_photo,
+                            caption=profile_text,
+                            reply_markup=reply_markup
                         )
-                await call.answer()
-            except Exception as e:
-                logging.error(f"При поиске фотографии в Users.photo - произошла ошибка - [{e}]")
-                await call.answer()
+                    await call.answer()
+                except Exception as e:
+                    logging.error(f"При поиске фотографии в Users.photo для {profile_id} - произошла ошибка - [{e}]")
+                    await call.answer()
+            else:
+                reply_markup = InlineKeyboardMarkup(row_width=1).add(
+                    InlineKeyboardButton(
+                        text="Изменить Никнейм",
+                        callback_data=edit_profile_callback.new(action='nickname', type='nickname', id=profile_id)
+                    ),
+                    InlineKeyboardButton(
+                        text="Добавить Фото",
+                        callback_data=edit_profile_callback.new(action='photo', type=profile_type, id=profile_id)
+                    ),
+                    InlineKeyboardButton(
+                        text="Сменить класс",
+                        callback_data=edit_profile_callback.new(action='change_hero_class', type=profile_type,
+                                                                id=profile_id)
+                    ),
+                    InlineKeyboardButton(
+                        text="Заявка на отпуск",
+                        callback_data=edit_profile_callback.new(action='vacation', type=profile_type,
+                                                                id=profile_id)
+                    )
+                )
+                try:
+                    await call.message.answer(
+                        text=profile_text,
+                        reply_markup=reply_markup
+                    )
+                    await call.answer()
+                except Exception as e:
+                    logging.error(f"При отправке профиля USER {profile_id} - произошла ошибка - [{e}]")
+                    await call.answer()
 
     # Получаем профиль Наставника
     elif profile_type == 'mentor':
@@ -303,7 +344,13 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
             profile_text_mentor += f"Количество учеников: {profile_data_mentors.mentor_number_of_students}\n"
             profile_text_mentor += f"Время онлайн: {profile_data_mentors.mentor_time_online}\n"
             profile_text_mentor += f"Характеристика: {profile_data_mentors.mentor_characteristic}\n"
-
+            # Добавляем кнопки для изменения профиля
+            reply_markup = InlineKeyboardMarkup(row_width=1).add(
+                InlineKeyboardButton(
+                    text="Изменить Фото",
+                    callback_data=edit_profile_callback.new(action='photo', type=profile_type, id=profile_id)
+                )
+            )
             # Поиск фотографии ментора (если есть)
             profile_photo_mentor = profile_data_mentors.mentor_photo  # Предполагается, что у Mentor есть поле "photo"
             if profile_photo_mentor:
@@ -311,14 +358,30 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                     with open(profile_photo_mentor, 'rb') as mentor_profile_photo:
                         await call.message.answer_photo(
                             photo=mentor_profile_photo,
-                            caption=profile_text_mentor)
+                            caption=profile_text_mentor,
+                            reply_markup=reply_markup
+                        )
                     await call.answer()
                 except Exception as e:
-                    logging.error(f"При поиске фотографии в Mentors.mentor_photo - произошла ошибка - [{e}]")
+                    logging.error(f"При поиске фотографии в Mentors.mentor_photo {profile_id} "
+                                  f"- произошла ошибка - [{e}]")
                     await call.answer()
             else:
-                await call.message.answer(profile_text_mentor)
-                await call.answer()
+                reply_markup = InlineKeyboardMarkup(row_width=1).add(
+                    InlineKeyboardButton(
+                        text="Добавить Фото",
+                        callback_data=edit_profile_callback.new(action='photo', type=profile_type, id=profile_id)
+                    )
+                )
+                try:
+                    await call.message.answer(
+                        text=profile_text_mentor,
+                        reply_markup=reply_markup
+                    )
+                    await call.answer()
+                except Exception as e:
+                    logging.error(f"При отправке профиля MENTOR {profile_id} - произошла ошибка - [{e}]")
+                    await call.answer()
         else:
             await call.message.answer("Профиль Наставника не найден.")
             await call.answer()
@@ -333,51 +396,100 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
             profile_text_admin += f"Должность: {profile_data_admin.admin_position}\n"
             # Поиск фотографии Админа (если есть)
             profile_photo_admin = profile_data_admin.admin_photo
+            # Добавляем кнопки для изменения профиля
+            reply_markup = InlineKeyboardMarkup(row_width=1).add(
+                InlineKeyboardButton(
+                    text="Изменить Фото",
+                    callback_data=edit_profile_callback.new(action='photo', type=profile_type, id=profile_id)
+                )
+            )
+
             if profile_photo_admin:
                 try:
                     with open(profile_photo_admin, 'rb') as admin_profile_photo:
                         await call.message.answer_photo(
                             photo=admin_profile_photo,
-                            caption=profile_text_admin)
+                            caption=profile_text_admin,
+                            reply_markup=reply_markup
+                        )
                     await call.answer()
                 except Exception as e:
-                    logging.error(f"При поиске фотографии в Admins.admin_photo - произошла ошибка - [{e}]")
+                    logging.error(f"При поиске фотографии в Admins.admin_photo {profile_id} - произошла ошибка - [{e}]")
                     await call.answer()
             else:
-                await call.message.answer(profile_text_admin)
-                await call.answer()
+                reply_markup = InlineKeyboardMarkup(row_width=1).add(
+                    InlineKeyboardButton(
+                        text="Добавить Фото",
+                        callback_data=edit_profile_callback.new(action='photo', type=profile_type, id=profile_id)
+                    )
+                )
+                try:
+                    await call.message.answer(
+                        text=profile_text_admin,
+                        reply_markup=reply_markup
+                    )
+                    await call.answer()
+                except Exception as e:
+                    logging.error(f"При отправке профиля ADMIN {profile_id} - произошла ошибка - [{e}]")
+                    await call.answer()
         else:
             await call.message.answer("Профиль Администратора не найден.")
             await call.answer()
 
 
+# объявляем состояние для изменения профиля
 class UserStates(StatesGroup):
     nickname_state = State()
+    photo_state = State()
+    change_hero_class = State()
 
 
+# обработка callback изменения профиля
 @dp.callback_query_handler(edit_profile_callback.filter())
 async def handle_change(call: types.CallbackQuery, callback_data: dict):
     edit_type = callback_data["type"]
     profile_id = callback_data["id"]
     logging.info(f"Тип изменения профиля: {edit_type} - id_user [{profile_id}]")
     if callback_data['action'] == 'nickname':
-        await call.message.answer("Введи новый ник")
+        await call.message.answer("Введи новый ник"
+                                  "\nДля отмены введите /cancel"
+                                  "\n\nВаш Nickname изменится во всех профилях автоматически")
         await dp.current_state().set_state(UserStates.nickname_state)
         # Сохраняем profile_id в контексте
         await dp.current_state().update_data(profile_id=profile_id)
+        await call.answer()
 
     elif callback_data['action'] == 'photo':
-        # Handle photo change logic here
-        await call.answer("Изменить Фото - в разработке")
+        await call.message.answer("Загрузите новую фотографию:"
+                                  "\nДля отмены введите /cancel")
+        await dp.current_state().set_state(UserStates.photo_state)
+        await dp.current_state().update_data(profile_id=profile_id)
+        await dp.current_state().update_data(edit_type=edit_type)
+        await call.answer()
+
+    elif callback_data['action'] == 'change_hero_class':
+        # await call.message.answer("Для смены класса воспользуйтесь кнопками:"
+        #                           "\nДля отмены введите /cancel")
+        # await dp.current_state().set_state(UserStates.change_hero_class)
+        # await dp.current_state().update_data(profile_id=profile_id)
+        # await call.answer()
+        await call.answer("В разработке")
+
+    elif callback_data['action'] == 'vacation':
+        await call.answer("В разработке")
 
 
+# Обработка состояния для изменения nickname и запись в БД
 @dp.message_handler(state=UserStates.nickname_state)
 async def change_nickname(message: types.Message, state: FSMContext):
     new_nickname = message.text
-    # Проверяем, что предыдущее сообщение было запросом на ввод никнейма
-    if new_nickname.startswith('/'):
+    # Проверяем, что предыдущее сообщение было запросом на ввод nickname
+    if new_nickname.startswith('/') and new_nickname != "/cancel":
         await message.reply("Неверно. Ник не должен начинаться с символа /")
         return  # Выход из обработчика, если ник неверный
+    elif new_nickname != "/cancel":
+        await state.finish()
+        await message.reply("Смена никнейма отменена!")
     else:
         try:
             data = await state.get_data()
@@ -404,9 +516,137 @@ async def change_nickname(message: types.Message, state: FSMContext):
             else:
                 await message.reply(f"В процессе смены никнейма произошла ошибка. Обратитесь к Администратору")
         except Exception as e:
-            await message.reply(f"Невозможно сменить никнейм из-за внутренней ошибки [handle_nickname_input]"
+            await message.reply(f"Невозможно сменить никнейм из-за внутренней ошибки [change_nickname]"
                                 f"Обратитесь к Администратору")
-            logging.error(f"Ошибка при изменении никнейма[handle_nickname_input]  -  [{e}]")
+            logging.error(f"Ошибка при изменении user_nickname[change_nickname]  -  [{e}]")
+
+
+# Обработка состояния для смены фотографии пользователя и запись в БД
+@dp.message_handler(content_types=['photo', 'text'], state=UserStates.photo_state)
+async def change_photo(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    type_user = data.get('edit_type')
+    profile_id = data.get('profile_id')
+
+    if message.photo:
+        # Скачиваем фотографию, если сообщение не команда и не текст
+        try:
+            if type_user == 'user':
+                photo = message.photo[-1]  # Берем последнюю фотографию (самую большую)
+                file_id = photo.file_id
+                file_path = await bot.get_file(file_id)
+                file_name = file_path['file_path']
+                await photo.download(destination_file=file_name)
+
+                # Определяем путь для сохранения файла
+                save_path = 'photos_profile/users'
+                os.makedirs(save_path, exist_ok=True)  # Создаем директорию, если ее нет
+
+                # Скачиваем файл в заданную директорию
+                await photo.download(destination_file=os.path.join(save_path, file_name))
+
+                # Генерируем уникальное имя для файла
+                unique_filename = str(uuid.uuid4()) + os.path.splitext(file_name)[1]
+
+                # Переименовываем файл
+                os.rename(os.path.join(save_path, file_name), os.path.join(save_path, unique_filename))
+                # Удаляем загруженный файл из \photos
+                os.remove(file_name)
+
+                user = session.query(User).filter_by(id=profile_id).first()
+                if user.photo:
+                    try:
+                        os.remove(user.photo)
+                    except FileNotFoundError:
+                        pass  # Файл уже удален, игнорируем ошибку
+
+                new_photo = os.path.join(save_path, unique_filename)
+                user.photo = new_photo
+                session.commit()
+                await state.finish()
+                await message.reply("Фото профиля участника гильдии успешно изменено")
+
+            elif type_user == 'mentor':
+                photo = message.photo[-1]  # Берем последнюю фотографию (самую большую)
+                file_id = photo.file_id
+                file_path = await bot.get_file(file_id)
+                file_name = file_path['file_path']
+                await photo.download(destination_file=file_name)
+
+                # Определяем путь для сохранения файла
+                save_path = 'photos_profile/mentors'
+                os.makedirs(save_path, exist_ok=True)  # Создаем директорию, если ее нет
+
+                # Скачиваем файл в заданную директорию
+                await photo.download(destination_file=os.path.join(save_path, file_name))
+
+                # Генерируем уникальное имя для файла
+                unique_filename = str(uuid.uuid4()) + os.path.splitext(file_name)[1]
+
+                # Переименовываем файл
+                os.rename(os.path.join(save_path, file_name), os.path.join(save_path, unique_filename))
+                # Удаляем загруженный файл из \photos
+                os.remove(file_name)
+
+                mentor = session.query(Mentor).filter_by(id=profile_id).first()
+                if mentor.mentor_photo:
+                    try:
+                        os.remove(mentor.mentor_photo)
+                    except FileNotFoundError:
+                        pass  # Файл уже удален, игнорируем ошибку
+                new_photo = os.path.join(save_path, unique_filename)
+                mentor.mentor_photo = new_photo
+                session.commit()
+                await state.finish()
+                await message.reply("Фото профиля наставника успешно изменено")
+
+            elif type_user == 'admin':
+                photo = message.photo[-1]  # Берем последнюю фотографию (самую большую)
+                file_id = photo.file_id
+                file_path = await bot.get_file(file_id)
+                file_name = file_path['file_path']
+                await photo.download(destination_file=file_name)
+
+                # Определяем путь для сохранения файла
+                save_path = 'photos_profile/admins'
+                os.makedirs(save_path, exist_ok=True)  # Создаем директорию, если ее нет
+
+                # Скачиваем файл в заданную директорию
+                await photo.download(destination_file=os.path.join(save_path, file_name))
+
+                # Генерируем уникальное имя для файла
+                unique_filename = str(uuid.uuid4()) + os.path.splitext(file_name)[1]
+
+                # Переименовываем файл
+                os.rename(os.path.join(save_path, file_name), os.path.join(save_path, unique_filename))
+                # Удаляем загруженный файл из \photos
+                os.remove(file_name)
+
+                admin = session.query(Admin).filter_by(id=profile_id).first()
+                if admin.admin_photo:
+                    try:
+                        os.remove(admin.admin_photo)
+                    except FileNotFoundError:
+                        pass  # Файл уже удален, игнорируем ошибку
+                new_photo = os.path.join(save_path, unique_filename)
+                admin.admin_photo = new_photo
+                session.commit()
+                await state.finish()
+                await message.reply("Фото профиля администратора успешно изменено")
+
+        except Exception as e:
+            await message.reply(f"Невозможно добавить/обновить фото профиля [change_photo]"
+                                f"Обратитесь к Администратору")
+            logging.error(f"Ошибка при изменении photo_nickname[change_photo] для {type_user} c id:{profile_id} "
+                          f" -  [{e}]")
+    elif message.text.lower() != '/cancel':
+        await message.reply("Пожалуйста загрузите только фото:"
+                            "\n/cancel - для отмены добавления/изменения фото профиля")
+        return
+    else:
+        await state.finish()  # Завершаем состояние
+        await message.reply("Добавление/изменение фото профиля отменены.")
+        return
 
 
 # Обработка кнопки Регистрация
@@ -465,6 +705,7 @@ async def show_free_mentors(message: types.Message):
             # Получение класса героя и знаний ментора
             mentor_account_id = mentor.mentor_account_id
             mentor_interest = mentor.mentor_interest
+            mentor_number_of_students = mentor.mentor_number_of_students
             mentor_user_data = session.query(User).filter_by(account_id=mentor_account_id).first()
             if mentor_user_data:
                 hero_class = mentor_user_data.hero_class
@@ -472,7 +713,8 @@ async def show_free_mentors(message: types.Message):
                 hero_class = "Не указан"
 
             button = types.InlineKeyboardButton(
-                text=f"Наставник: {mentor_nickname} ({hero_class}) - {mentor_interest}",
+                text=f"Наставник: {mentor_nickname} ({hero_class}) - {mentor_interest}"
+                     f"\nУчеников: {mentor_number_of_students}",
                 callback_data=f"profile:mentor:{mentor_id}"
             )
             keyboard.insert(button)
@@ -480,6 +722,7 @@ async def show_free_mentors(message: types.Message):
         await message.answer("Выберите свободного наставника:", reply_markup=keyboard)
     else:
         await message.answer("В данный момент нет свободных наставников.")
+
 
 '''КОМАНДЫ ДЛЯ РЕГИСТРАЦИИ'''
 
@@ -634,7 +877,8 @@ async def process_photo(message: types.Message, state: FSMContext):
 
         # Переименовываем файл
         os.rename(os.path.join(save_path, file_name), os.path.join(save_path, unique_filename))
-
+        # Удаляем загруженный файл из \photos
+        os.remove(file_name)
         # Сохраняем путь к фотографии в данные состояния
         async with state.proxy() as data:
             data['photo'] = os.path.join(save_path, unique_filename)  # Сохраняем путь к файлу
@@ -764,10 +1008,17 @@ async def process_user_mentor_id(message: types.Message, state: FSMContext):
                         if mentor_telegram_id is not None and mentor_telegram_id != "":
                             try:
                                 mentor_username = mentor_user_data.username
+                                mentor_nickname = mentor_user_data.nickname
                                 mentor_message = f"Участник {user.nickname} с гильдии {user.guild} " \
                                                  f"выбрал Вас в качестве своего наставника." \
                                                  f"\n\nДля связи с учеником используйте @{mentor_username}"
+                                notification_guild = f"Участник {user.nickname} герой {user.hero_class} " \
+                                                     f"с гильдии {user.guild} " \
+                                                     f"выбрал качестве своего наставника{mentor_nickname}" \
+                                                     f"\n\nДля связи с участником используйте @{user.username}"
                                 await bot.send_message(mentor_telegram_id, mentor_message)
+                                # await bot.send_message(config.officer_chat_id, notification_guild,
+                                #                        message_thread_id=config.office_mentor_thread_id) НАСТРОИТЬ ПЕРЕД ЗАПУСКОМ
                             except Exception as e:
                                 logging.error(f"При отправке сообщения Наставнику - произошла ошибка - [{e}]")
                 session.close()  # Закрытие сессии после отправки сообщения
@@ -881,7 +1132,8 @@ async def process_mentor_photo(message: types.Message, state: FSMContext):
 
         # Переименовываем файл
         os.rename(os.path.join(save_path, file_name), os.path.join(save_path, unique_filename))
-
+        # Удаляем загруженный файл из \photos
+        os.remove(file_name)
         # Сохраняем путь к фотографии в данные состояния
         async with state.proxy() as data:
             data['photo'] = os.path.join(save_path, unique_filename)  # Сохраняем путь к файлу
@@ -1083,7 +1335,8 @@ async def process_admin_photo(message: types.Message, state: FSMContext):
 
         # Переименовываем файл
         os.rename(os.path.join(save_path, file_name), os.path.join(save_path, unique_filename))
-
+        # Удаляем загруженный файл из \photos
+        os.remove(file_name)
         # Сохраняем путь к фотографии в данные состояния
         async with state.proxy() as data:
             data['admin_photo'] = os.path.join(save_path, unique_filename)  # Сохраняем путь к файлу
