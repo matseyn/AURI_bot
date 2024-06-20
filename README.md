@@ -17,5 +17,6 @@
 
 Текущая схема БД 
 
-![ERD_auri_2024-06-20T20_31_50 508Z](https://github.com/matseyn/AURI_bot/assets/165843276/ba6f3b5e-faaf-4f81-8099-27d4ba3c7bfd)
+![image](https://github.com/matseyn/AURI_bot/assets/165843276/d5440366-ccbd-4447-af1a-80eef12ce6b1)
+
 
