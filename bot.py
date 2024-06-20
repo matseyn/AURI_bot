@@ -13,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import Column, Integer, String, UniqueConstraint, ForeignKey, DateTime
+from sqlalchemy.exc import IntegrityError, OperationalError
 import config
 from datetime import datetime
 from aiogram.utils.exceptions import MessageNotModified
@@ -87,6 +88,17 @@ class Admin(Base):
     admin_photo = Column(String)
 
 
+# Определение класса BM_DPS для БД
+class BM_DPS(Base):
+    __tablename__ = 'BM_DPS'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('Users.id'))  # равен Users.id
+    bm = Column(String)
+    dps = Column(String)
+    date_update = Column(DateTime)
+
+
 Base.metadata.create_all(engine)
 
 Session = sessionmaker(bind=engine)
@@ -114,6 +126,8 @@ class AdminEditProfile(StatesGroup):
 profile_callback = CallbackData("profile", "type", "id")  # Создаем CallbackData
 # CallbackData для обработки редактирования профиля пользователя
 edit_profile_callback = CallbackData('change', 'action', 'type', 'id')
+# CallbackData для профиля пользователя через Наставника
+my_students_profile_callback = CallbackData('change', 'action', 'id')
 # CallbackData для обработки функций администратора
 admin_edit_profile_callback = CallbackData('change', 'action', 'type', 'id')
 
@@ -129,7 +143,7 @@ async def start_command(message: types.Message):
         types.KeyboardButton('\U0001F198Помощь'),
         types.KeyboardButton('Администрирование')
     ]
-    # Заготовка под ролевую модель
+    # Заготовка под ролевую модель РОЛЕВАЯ
     # buttons = [
     #     types.KeyboardButton('\U0001F464Мой профиль'),
     #     types.KeyboardButton('Регистрация'),
@@ -166,7 +180,6 @@ async def show_all_profiles(message: types.Message):
 
     # Добавляем кнопки для профилей всех пользователей с данным telegram_id
     for user in users:
-        # Создайте callback_data вне цикла
         callback_data = profile_callback.new(type="user", id=user.id)
         keyboard.add(InlineKeyboardButton(
             text=f"\U0001F476Участник: {user.nickname} ({user.hero_class}, {user.status})",
@@ -234,6 +247,9 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
             profile_text += f"Имя:  {field_values.get('first_name', 'Не указан')}\n"
             profile_text += f"Никнейм:  {field_values.get('nickname', 'Не указан')}\n"
             profile_text += f"Класс героя:  {field_values.get('hero_class', 'Не указан')}\n"
+            bm_dps_data = session.query(BM_DPS).filter_by(user_id=profile_id).first()
+            if bm_dps_data is not None:
+                profile_text += f"БМ/ДПС: {bm_dps_data.bm or 'Не указан'} / {bm_dps_data.dps or 'Не указан'}\n"
             profile_text += f"ID аккаунта:  <code>{field_values.get('account_id', 'Не указан')}</code>\n"
             profile_text += f"Наставник:  {field_values.get('mentor_id', 'Не указан')}\n"
 
@@ -254,7 +270,8 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
             # Вычисление времени с момента регистрации
             registration_date = field_values.get('date_registration')
             if registration_date:
-                registration_date = datetime.strptime(registration_date.strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S')
+                registration_date = datetime.strptime(registration_date.strftime('%Y-%m-%d %H:%M:%S'),
+                                                      '%Y-%m-%d %H:%M:%S')
                 time_delta = datetime.now() - registration_date
 
                 days = time_delta.days
@@ -262,7 +279,7 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                 minutes = (time_delta.seconds % 3600) // 60
                 seconds = time_delta.seconds % 60
 
-                profile_text += f"Дата регистрации:  {registration_date.strftime('%d:%m:%Y')}\n"
+                profile_text += f"Дата регистрации:  {registration_date.strftime('%d-%m-%Y')}\n"
                 profile_text += f"В системе:  {days} дней {hours} часов {minutes} минут {seconds} секунд\n"
             else:
                 profile_text += f"Дата регистрации:  Не указана\n"
@@ -272,7 +289,7 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
             reply_markup = InlineKeyboardMarkup(row_width=1).add(
                 InlineKeyboardButton(
                     text="Изменить Никнейм",
-                    callback_data=edit_profile_callback.new(action='nickname', type='nickname', id=profile_id)
+                    callback_data=edit_profile_callback.new(action='nickname', type=profile_type, id=profile_id)
                 ),
                 InlineKeyboardButton(
                     text="Изменить Фото",
@@ -281,6 +298,11 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                 InlineKeyboardButton(
                     text="Сменить класс",
                     callback_data=edit_profile_callback.new(action='change_hero_class', type=profile_type,
+                                                            id=profile_id)
+                ),
+                InlineKeyboardButton(
+                    text="Обновить БМ/ДПС",
+                    callback_data=edit_profile_callback.new(action='change_bm_dps', type=profile_type,
                                                             id=profile_id)
                 ),
                 InlineKeyboardButton(
@@ -307,7 +329,7 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                 reply_markup = InlineKeyboardMarkup(row_width=1).add(
                     InlineKeyboardButton(
                         text="Изменить Никнейм",
-                        callback_data=edit_profile_callback.new(action='nickname', type='nickname', id=profile_id)
+                        callback_data=edit_profile_callback.new(action='nickname', type=profile_type, id=profile_id)
                     ),
                     InlineKeyboardButton(
                         text="Добавить Фото",
@@ -316,6 +338,11 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                     InlineKeyboardButton(
                         text="Сменить класс",
                         callback_data=edit_profile_callback.new(action='change_hero_class', type=profile_type,
+                                                                id=profile_id)
+                    ),
+                    InlineKeyboardButton(
+                        text="Обновить БМ/ДПС",
+                        callback_data=edit_profile_callback.new(action='change_bm_dps', type=profile_type,
                                                                 id=profile_id)
                     ),
                     InlineKeyboardButton(
@@ -375,6 +402,10 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                 InlineKeyboardButton(
                     text="Изменить Фото",
                     callback_data=edit_profile_callback.new(action='photo', type=profile_type, id=profile_id)
+                ),
+                InlineKeyboardButton(
+                    text="Мои ученики",
+                    callback_data=edit_profile_callback.new(action='show_students', type=profile_type, id=profile_id)
                 )
             )
             # Поиск фотографии ментора (если есть)
@@ -397,6 +428,11 @@ async def show_user_profile(call: CallbackQuery, callback_data: dict):
                     InlineKeyboardButton(
                         text="Добавить Фото",
                         callback_data=edit_profile_callback.new(action='photo', type=profile_type, id=profile_id)
+                    ),
+                    InlineKeyboardButton(
+                        text="Мои ученики",
+                        callback_data=edit_profile_callback.new(action='show_students', type=profile_type,
+                                                                id=profile_id)
                     )
                 )
                 try:
@@ -468,41 +504,154 @@ class UserStates(StatesGroup):
     nickname_state = State()
     photo_state = State()
     change_hero_class = State()
+    change_bm_dps_state = State()
 
 
 # обработка callback изменения профиля
 @dp.callback_query_handler(edit_profile_callback.filter())
 async def handle_change(call: types.CallbackQuery, callback_data: dict):
-    edit_type = callback_data["type"]
+    logging.info(f"Полученный callback_data в handle_change: {callback_data}")
+    profile_type = callback_data["type"]
     profile_id = callback_data["id"]
-    logging.info(f"Тип изменения профиля: {edit_type} - id_user [{profile_id}]")
-    if callback_data['action'] == 'nickname':
-        await call.message.answer("Введи новый ник"
-                                  "\nДля отмены введите /cancel"
-                                  "\n\nВаш Nickname изменится во всех профилях автоматически")
-        await dp.current_state().set_state(UserStates.nickname_state)
-        # Сохраняем profile_id в контексте
-        await dp.current_state().update_data(profile_id=profile_id)
+    logging.info(f"Тип {profile_type} - изменения профиля: {callback_data['action']} - id_user [{profile_id}]")
+    # команды для профиля пользователя
+    if profile_type == 'user':
+        if callback_data['action'] == 'nickname':
+            await call.message.answer("Введи новый ник"
+                                      "\nДля отмены введите /cancel"
+                                      "\n\nВаш Nickname изменится во всех профилях автоматически")
+            await dp.current_state().set_state(UserStates.nickname_state)
+            # Сохраняем profile_id в контексте
+            await dp.current_state().update_data(profile_id=profile_id)
+            await call.answer()
+
+        elif callback_data['action'] == 'photo':
+            await call.message.answer("Загрузите новую фотографию:"
+                                      "\nДля отмены введите /cancel")
+            await dp.current_state().set_state(UserStates.photo_state)
+            await dp.current_state().update_data(profile_id=profile_id)
+            await dp.current_state().update_data(edit_type=profile_type)
+            await call.answer()
+
+        elif callback_data['action'] == 'change_hero_class':
+            # await call.message.answer("Для смены класса воспользуйтесь кнопками:"
+            #                           "\nДля отмены введите /cancel")
+            # await dp.current_state().set_state(UserStates.change_hero_class)
+            # await dp.current_state().update_data(profile_id=profile_id)
+            # await call.answer()
+            await call.answer("В разработке")
+
+        elif callback_data['action'] == 'change_bm_dps':
+            await call.message.answer("Введите свой БМ:"
+                                      "\nДля отмены изменений введите /cancel")
+            await dp.current_state().set_state(UserStates.change_bm_dps_state)
+            await dp.current_state().update_data(profile_id=profile_id)
+            await call.answer()
+            # await call.answer("В разработке")
+
+        elif callback_data['action'] == 'vacation':
+            await call.answer("В разработке")
+
+    elif profile_type == 'mentor':
+        if callback_data['action'] == 'show_students':
+            students_data = session.query(User).filter_by(mentor_id=profile_id).all()
+            keyboard = InlineKeyboardMarkup(row_width=1)
+            if students_data:
+                for student in students_data:
+                    if student:
+                        callback_data = my_students_profile_callback.new(action="show_my_student", id=student.id)
+                        keyboard.add(InlineKeyboardButton(
+                            text=f"\U0001F476Ученик: {student.nickname} ({student.hero_class}, {student.status}) - "
+                                 f"{student.guild}",
+                            callback_data=callback_data
+                        ))
+                await call.message.answer(text='Ваши ученики:', reply_markup=keyboard)
+                await call.answer()
+            else:
+                await call.message.answer(text='У вас еще нет участников.')
+
+
+# Обработка профиля ученика (show_my_student)
+@dp.callback_query_handler(my_students_profile_callback.filter(action="show_my_student"))
+async def show_my_student_profile(call: CallbackQuery, callback_data: dict):
+    student_id = callback_data["id"]
+    # Получаем данные ученика
+    student_data = session.query(User).filter_by(id=student_id).first()
+    profile_photo_student = student_data.photo
+
+    if student_data:
+        profile_text = f"Профиль:\n"
+
+        # Создаем словарь для замены mentor_id на mentor_nickname
+        field_values = {}
+        for field_name in ('telegram_id', 'username', 'first_name', 'nickname', 'hero_class', 'account_id',
+                           'guild', 'date_registration', 'status', 'photo'):
+            field_value = getattr(student_data, field_name, None)
+            field_values[field_name] = field_value
+        profile_text += f"telegram:  @{field_values.get('username', 'Не указан')}\n"
+        profile_text += f"Имя:  {field_values.get('first_name', 'Не указан')}\n"
+        profile_text += f"Никнейм:  {field_values.get('nickname', 'Не указан')}\n"
+        profile_text += f"Класс героя:  {field_values.get('hero_class', 'Не указан')}\n"
+        bm_dps_data = session.query(BM_DPS).filter_by(user_id=student_id).first()
+        if bm_dps_data is not None:
+            profile_text += f"БМ/ДПС: {bm_dps_data.bm or 'Не указан'} / {bm_dps_data.dps or 'Не указан'}\n"
+        profile_text += f"ID аккаунта:  <code>{field_values.get('account_id', 'Не указан')}</code>\n"
+        profile_text += f"Гильдия:  {field_values.get('guild', 'Не указан')}\n"
+        # Вычисление времени с момента регистрации
+        registration_date = field_values.get('date_registration')
+        if registration_date:
+            registration_date = datetime.strptime(registration_date.strftime('%Y-%m-%d %H:%M:%S'),
+                                                  '%Y-%m-%d %H:%M:%S')
+            time_delta = datetime.now() - registration_date
+
+            days = time_delta.days
+            hours = time_delta.seconds // 3600
+            minutes = (time_delta.seconds % 3600) // 60
+            seconds = time_delta.seconds % 60
+
+            profile_text += f"Дата регистрации:  {registration_date.strftime('%d-%m-%Y')}\n"
+            profile_text += f"В системе:  {days} дней {hours} часов {minutes} минут {seconds} секунд\n"
+        else:
+            profile_text += f"Дата регистрации:  Не указана\n"
+
+        profile_text += f"Статус:  {field_values.get('status', 'Не указан')}\n"
+        # Добавляем кнопку "Назад"
+        reply_markup = InlineKeyboardMarkup(row_width=1).add(
+            InlineKeyboardButton(
+                text="Назад",
+                callback_data=profile_callback.new(type="mentor", id=student_data.mentor_id)
+                # Возвращаемся к профилю ментора
+            )
+        )
+
+        if profile_photo_student:
+            try:
+                with open(profile_photo_student, 'rb') as student_profile_photo:
+                    await call.message.answer_photo(
+                        photo=student_profile_photo,
+                        caption=profile_text,
+                        reply_markup=reply_markup,
+                        parse_mode='html'
+                    )
+                await call.answer()
+            except Exception as e:
+                logging.error(f"При поиске фотографии в Users.photo для {student_id} - произошла ошибка - [{e}]")
+                await call.answer()
+        else:
+            try:
+                await call.message.answer(
+                    text=profile_text,
+                    reply_markup=reply_markup,
+                    parse_mode='html'
+                )
+                await call.answer()
+            except Exception as e:
+                logging.error(f"При отправке профиля STUDENT {student_id} - произошла ошибка - [{e}]")
+                await call.answer()
+
+    else:
+        await call.message.answer("Профиль ученика не найден.")
         await call.answer()
-
-    elif callback_data['action'] == 'photo':
-        await call.message.answer("Загрузите новую фотографию:"
-                                  "\nДля отмены введите /cancel")
-        await dp.current_state().set_state(UserStates.photo_state)
-        await dp.current_state().update_data(profile_id=profile_id)
-        await dp.current_state().update_data(edit_type=edit_type)
-        await call.answer()
-
-    elif callback_data['action'] == 'change_hero_class':
-        # await call.message.answer("Для смены класса воспользуйтесь кнопками:"
-        #                           "\nДля отмены введите /cancel")
-        # await dp.current_state().set_state(UserStates.change_hero_class)
-        # await dp.current_state().update_data(profile_id=profile_id)
-        # await call.answer()
-        await call.answer("В разработке")
-
-    elif callback_data['action'] == 'vacation':
-        await call.answer("В разработке")
 
 
 # Обработка состояния для изменения nickname и запись в БД
@@ -675,6 +824,79 @@ async def change_photo(message: types.Message, state: FSMContext):
         return
 
 
+# Обработка состояния для обновления БМ и ДПС и запись в БД
+@dp.message_handler(state=UserStates.change_bm_dps_state)
+async def process_bm_dps(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        profile_id = data['profile_id']
+
+        if message.text == '/cancel':
+            await message.answer("Изменение БМ и ДПС отменено.")
+            await state.finish()
+            return
+
+        if '/' in message.text:
+            await message.answer(
+                "Ввод БМ и ДПС не должен содержать символ '/'. Пожалуйста, введите данные заново.")
+            return
+
+        if 'bm' in data:  # Если БМ уже введен
+            dps = message.text
+            user_data = session.query(User).filter_by(id=profile_id).first()
+            notification_update_dps = f"Участник {user_data.nickname} герой {user_data.hero_class} " \
+                                      f"с гильдии {user_data.guild} " \
+                                      f"обновил данные своего БМ и ДПС"
+            date_update = datetime.now()
+
+            existing_bm_dps = session.query(BM_DPS).filter_by(user_id=profile_id).first()
+
+            if existing_bm_dps:
+                # Обновление данных
+                existing_bm_dps.bm = data['bm']
+                existing_bm_dps.dps = dps
+                existing_bm_dps.date_update = date_update
+            else:
+                # Создание новой записи
+                bm_dps_data = BM_DPS(user_id=profile_id, bm=data['bm'], dps=dps, date_update=date_update)
+                session.add(bm_dps_data)
+
+            try:
+                session.commit()
+                logging.info(f"{notification_update_dps}")
+                await message.answer("БМ и ДПС успешно обновлены.")
+                await state.finish()  # Завершение состояния после записи данных
+                session.close()
+            except IntegrityError as e:
+                await message.reply(
+                    "Произошла ошибка при обновлении данных. Пожалуйста, проверьте правильность "
+                    "введенных данных и попробуйте снова.")
+                logging.error(
+                    f"Ошибка IntegrityError при изменении bm_dps_data[change_bm_dps] для {user_data.nickname} "
+                    f"c id:{profile_id}"
+                    f"\n Ошибка {e}")
+            except OperationalError as e:
+                await message.reply("Произошла ошибка соединения с базой данных. Пожалуйста, попробуйте позже.")
+                logging.error(
+                    f"Ошибка OperationalError при изменении bm_dps_data[change_bm_dps] для {user_data.nickname} "
+                    f"c id:{profile_id}"
+                    f"\n Ошибка {e}")
+            except Exception as e:
+                await message.reply("Невозможно обновить БМ и ДПС. Обратитесь к Администратору.")
+                logging.error(f"Ошибка при изменении bm_dps_data[change_bm_dps] для {user_data.nickname} "
+                              f"c id:{profile_id}"
+                              f"\n Ошибка {e}")
+
+            # await bot.send_message(config.officer_chat_id, notification_guild,
+            # message_thread_id=config.office_mentor_thread_id) НАСТРОИТЬ ПЕРЕД ЗАПУСКОМ
+        else:  # Если БМ еще не введен
+            bm = message.text
+            if '/' in bm:
+                await message.answer("Ввод БМ не должен содержать символ '/'. Пожалуйста, введите данные заново.")
+                return
+            await message.answer("Введите свой ДПС:")
+            await dp.current_state().update_data(bm=bm)
+
+
 # Обработка кнопки Регистрация
 @dp.message_handler(lambda message: message.text == 'Регистрация')
 async def registration_start(message: types.Message):
@@ -686,7 +908,7 @@ async def registration_start(message: types.Message):
         # types.KeyboardButton('\U0001F50DПоиск наставника', description='Найти свободных Наставников'),
         types.KeyboardButton('\U0001F519Назад', description='Вернуться к предыдущему меню')
     ]
-    # Заготовка под ролевую модель
+    # Заготовка под ролевую модель РОЛЕВАЯ
     # buttons = [
     #     types.KeyboardButton('Регистрация участника', description='Регистрация пользователя'),
     #     types.KeyboardButton('\U0001F50DПоиск наставника', description='Найти свободных Наставников'),
@@ -762,7 +984,7 @@ async def back_to_start(message: types.Message):
 
 # Обработка кнопки Администрирование
 @dp.message_handler(lambda message: message.text == 'Администрирование')
-async def command_administration(message: types.Message, state: FSMContext):
+async def command_administration(message: types.Message):
     buttons = [
         types.KeyboardButton('Действия над участниками')
     ]
@@ -991,7 +1213,7 @@ async def process_mentor_selection(call: CallbackQuery, state: FSMContext, callb
     # Получаем профиль Наставника
     mentor = session.query(Mentor).filter_by(id=mentor_id).first()
     if mentor:
-        # ... (Логика для получения и отображения профиля наставника с помощью существующей функции 'profile_type')
+        # (Логика для получения и отображения профиля наставника с помощью существующей функции 'profile_type')
         profile_text_mentor = f"Профиль Наставника:\n"
         # Получение данных о связи с ментором
         mentor_account_id = mentor.mentor_account_id
@@ -1322,9 +1544,8 @@ async def process_photo(message: types.Message, state: FSMContext):
                         nickname=data['nickname'],
                         hero_class=data['hero_class'],
                         account_id=data['account_id'],  # id аккаунта в игре
-                        photo=data['photo'],
                         guild=data['guild'],
-                        mentor_id=data['user_mentor_id'],
+                        mentor_id=data['mentor_id'],
                         date_registration=datetime.now(),
                         status=data['status']  # Может иметь 3 значения:
                         # active (активный участник ги);
@@ -2369,7 +2590,7 @@ async def get_start_menu():
         KeyboardButton('\U0001F198Помощь'),
         KeyboardButton('Администрирование')
     ]
-    # Заготовка под ролевую модель
+    # Заготовка под ролевую модель РОЛЕВАЯ
     # buttons = [
     #     types.KeyboardButton('\U0001F464Мой профиль'),
     #     types.KeyboardButton('Регистрация'),
