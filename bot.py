@@ -60,6 +60,8 @@ class Transfers(Base):
     admin_id = Column(Integer, ForeignKey('Admins.id'))
     transfer_date = Column(DateTime)
     reason = Column(String)
+    from_guild = Column(String)
+    where_guild = Column(String)
 
 
 # Определение класса Mentor для БД
@@ -118,6 +120,7 @@ class AdminEditProfile(StatesGroup):
     search_account = State()
     reason = State()
     change_guild = State()
+    select_reason = State()
 
 
 '''СТАРТОВЫЕ КОМАНДЫ И ФУНКЦИИ'''
@@ -130,6 +133,8 @@ edit_profile_callback = CallbackData('change', 'action', 'type', 'id')
 my_students_profile_callback = CallbackData('change', 'action', 'id')
 # CallbackData для обработки функций администратора
 admin_edit_profile_callback = CallbackData('change', 'action', 'type', 'id')
+
+transfer_reasons_callback = CallbackData('transfer_reasons', 'action', 'reason')
 
 
 @dp.message_handler(commands=['start'])
@@ -997,6 +1002,7 @@ async def command_administration(message: types.Message):
     await message.answer('Что хотите сделать?', reply_markup=markup)
 
 
+# Обработка кнопки Администрирование
 @dp.message_handler(lambda message: message.text == 'Действия над участниками')
 async def command_edit_members(message: types.Message, state: FSMContext):
     with open('image/reg_user_3.jpg', 'rb') as transfer_id_account_photo:
@@ -1007,6 +1013,7 @@ async def command_edit_members(message: types.Message, state: FSMContext):
     await state.set_state(AdminEditProfile.search_account.state)
 
 
+# обработка поиска участника для администратора
 @dp.message_handler(state=AdminEditProfile.search_account)
 async def search_account(message: types.Message, state: FSMContext):
     account_id = message.text
@@ -1085,7 +1092,8 @@ async def search_account(message: types.Message, state: FSMContext):
                                                                                id=account_id)),
             InlineKeyboardButton(text="Сменить Наставника",
                                  callback_data=admin_edit_profile_callback.new(action='change', type='mentor',
-                                                                               id=account_id))
+                                                                               id=account_id)),
+            InlineKeyboardButton(text="Назад", callback_data="back")
         ]
         reply_markup = InlineKeyboardMarkup(row_width=1).add(*buttons)
 
@@ -1116,8 +1124,17 @@ async def handle_change_guild(call: CallbackQuery, state: FSMContext):
     current_guild = user.guild
     new_guild = "AURI" if current_guild == "AcademAURI" else "AcademAURI"
 
-    # Отображаем сообщение с запросом причины
-    await call.message.answer(f"Введите причину перевода пользователя {user.username} из {current_guild} в {new_guild}")
+    # Создаем клавиатуру с причинами
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    for key, reason in config.transfer_reasons.items():
+        keyboard.insert(InlineKeyboardButton(
+            text=str(key),
+            callback_data=transfer_reasons_callback.new(action='select', reason=key)
+        ))
+
+    # Отправляем сообщение с клавиатурой
+    await call.message.answer(f"Выберите причину перевода пользователя {user.username} из {current_guild} в {new_guild}:",
+                              reply_markup=keyboard)
 
     # Сохраняем account_id и новую гильдию в состоянии
     async with state.proxy() as data:
@@ -1126,28 +1143,33 @@ async def handle_change_guild(call: CallbackQuery, state: FSMContext):
 
     session.close()
 
-    await state.set_state(AdminEditProfile.change_guild.state)
+    await state.set_state(AdminEditProfile.select_reason.state)
 
 
 # Обработчик для ввода причины перевода
-@dp.message_handler(state=AdminEditProfile.change_guild)
-async def process_change_guild(message: types.Message, state: FSMContext):
-    reason = message.text
-    admin_tg = message.from_user.id
-    logging.info(f"Получили admin_tg: {admin_tg}")
+@dp.callback_query_handler(transfer_reasons_callback.filter(action='select'),
+                           state=AdminEditProfile.select_reason)
+async def process_select_reason(call: CallbackQuery, state: FSMContext):
+    await call.message.delete()  # Удаляем сообщение с кнопками
+
+    reason_key = call.data.split(':')[2]
+    reason = config.transfer_reasons.get(int(reason_key))
+
     async with state.proxy() as data:
         account_id = data['account_id']
         new_guild = data['new_guild']
 
     # Обновление данных в базе данных
     user = session.query(User).filter_by(account_id=account_id).first()
+    current_guild = user.guild  # Сохраняем текущую гильдию
     user.guild = new_guild
-    user.transfer_reason = reason
+    user.transfer_reason = reason  # Устанавливаем причину перевода
     session.commit()
 
-    admin_id = get_admin_id(admin_tg)
+    admin_tg = call.from_user.id  # Получаем ID администратора
+    admin_id = get_admin_id(admin_tg)  # Получаем ID администратора из базы данных
     admin = session.query(Admin).filter_by(id=admin_id).first()
-    logging.info(f"Получили admin_id: {admin_id}")
+
     if admin_id is not None:
         try:
             transfer_date = datetime.now()
@@ -1156,23 +1178,43 @@ async def process_change_guild(message: types.Message, state: FSMContext):
                 user_id=user.id,
                 admin_id=admin_id,
                 transfer_date=transfer_date,
-                reason=reason
+                reason=reason,  # Записываем причину перевода
+                from_guild=current_guild,  # Добавляем текущую гильдию
+                where_guild=new_guild  # Добавляем новую гильдию
             )
             session.add(new_transfer)
             session.commit()
 
-            await message.answer(f"Пользователь {user.username} успешно переведен в {new_guild} администратором "
-                                 f"{admin.admin_nickname}", reply_markup=await get_start_menu())
-            # await bot.send_message(config.officer_chat_id, f"Пользователь {user.username} успешно переведен
-            # в {new_guild} администратором f"{admin.admin_nickname}, reply_markup=await get_start_menu(),
+            await call.message.answer(f"Пользователь {user.username} успешно переведен в {new_guild} администратором "
+                                      f"{admin.admin_nickname} по причине: {reason}",
+                                      reply_markup=await get_start_menu())
+            # await call.bot.send_message(config.officer_chat_id, f"Пользователь {user.username} успешно переведен в
+            # {new_guild} администратором " f"{admin.admin_nickname} по причине: {reason}",
             # message_thread_id=config.office_mentor_thread_id) НАСТРОИТЬ ПЕРЕД ЗАПУСКОМ
             await state.finish()
         except Exception as e:
             logging.error(f"Ошибка при записи данных в Transfers - {e}")
+            await call.message.answer(f"Произошла ошибка при переводе пользователя. Попробуйте позже.")
     else:
-        await message.answer("Вы не являетесь администратором")
+        await call.message.answer("Вы не являетесь администратором.")
         session.close()
         await state.finish()
+
+
+# Обработчик кнопки сменить наставника
+@dp.callback_query_handler(admin_edit_profile_callback.filter(action='change', type='mentor'),
+                           state=AdminEditProfile.reason)
+async def handle_change_mentor(call: CallbackQuery, state: FSMContext):
+    await call.answer("В разработке")
+
+
+# Обработчик для кнопки "Назад"
+@dp.callback_query_handler(lambda call: call.data == "back", state=AdminEditProfile.reason)
+async def handle_back_from_reason(call: CallbackQuery, state: FSMContext):
+    await call.message.delete()  # Удаляем сообщение с кнопками
+    await call.message.answer(
+        "Выберите действие:", reply_markup=await get_start_menu())  # Возвращаемся на главное меню
+    await state.finish()  # Завершаем состояние
 
 
 '''КОМАНДЫ ДЛЯ РЕГИСТРАЦИИ'''
