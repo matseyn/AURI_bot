@@ -849,7 +849,7 @@ async def process_bm_dps(message: types.Message, state: FSMContext):
         if not validate_input(message.text):
             await message.answer(
                 "Введёный БМ/ДПС не соответствует формату: "
-                "\nВведите число от 1 до 5 знаков с буквой K, M, B, T или AA в конце")
+                "\nВведите число от 3 до 5 знаков с буквой K, M, B, T или AA в конце")
             return
 
         if 'bm' in data:  # Если БМ уже введен
@@ -2690,9 +2690,9 @@ def get_admin_id(telegram_id):
 def validate_input(input_string):
     """
   Проверяет, соответствует ли строка заданному формату:
-  число от 1 до 5 знаков с буквой K, M, B, T или AA в конце.
+  число от 3 до 5 знаков с буквой K, M, B, T или AA в конце.
   """
-    pattern = r'^[1-9]\d{0,4}[KMBTA]{1}$'
+    pattern = r'^[1-9]\d{2,4}[KMBTA]{1}$'
     match = re.match(pattern, input_string)
     if match:
         return True
