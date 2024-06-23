@@ -19,6 +19,7 @@ from datetime import datetime
 from aiogram.utils.exceptions import MessageNotModified
 import os
 import uuid
+import re
 
 # Настройка логирования
 logging.basicConfig(level=10, filename="auri_bot_log.log", filemode="w",
@@ -148,7 +149,7 @@ async def start_command(message: types.Message):
         types.KeyboardButton('\U0001F198Помощь'),
         types.KeyboardButton('Администрирование')
     ]
-    # Заготовка под ролевую модель РОЛЕВАЯ
+    # Заготовка под ролевую модель #РОЛЕВАЯ
     # buttons = [
     #     types.KeyboardButton('\U0001F464Мой профиль'),
     #     types.KeyboardButton('Регистрация'),
@@ -845,8 +846,15 @@ async def process_bm_dps(message: types.Message, state: FSMContext):
                 "Ввод БМ и ДПС не должен содержать символ '/'. Пожалуйста, введите данные заново.")
             return
 
+        if not validate_input(message.text):
+            await message.answer(
+                "Введёный БМ/ДПС не соответствует формату: "
+                "\nВведите число от 1 до 5 знаков с буквой K, M, B, T или AA в конце")
+            return
+
         if 'bm' in data:  # Если БМ уже введен
             dps = message.text
+
             user_data = session.query(User).filter_by(id=profile_id).first()
             notification_update_dps = f"Участник {user_data.nickname} герой {user_data.hero_class} " \
                                       f"с гильдии {user_data.guild} " \
@@ -913,7 +921,7 @@ async def registration_start(message: types.Message):
         # types.KeyboardButton('\U0001F50DПоиск наставника', description='Найти свободных Наставников'),
         types.KeyboardButton('\U0001F519Назад', description='Вернуться к предыдущему меню')
     ]
-    # Заготовка под ролевую модель РОЛЕВАЯ
+    # Заготовка под ролевую модель #РОЛЕВАЯ
     # buttons = [
     #     types.KeyboardButton('Регистрация участника', description='Регистрация пользователя'),
     #     types.KeyboardButton('\U0001F50DПоиск наставника', description='Найти свободных Наставников'),
@@ -1133,8 +1141,9 @@ async def handle_change_guild(call: CallbackQuery, state: FSMContext):
         ))
 
     # Отправляем сообщение с клавиатурой
-    await call.message.answer(f"Выберите причину перевода пользователя {user.username} из {current_guild} в {new_guild}:",
-                              reply_markup=keyboard)
+    await call.message.answer(
+        f"Выберите причину перевода пользователя {user.username} из {current_guild} в {new_guild}:",
+        reply_markup=keyboard)
 
     # Сохраняем account_id и новую гильдию в состоянии
     async with state.proxy() as data:
@@ -1232,17 +1241,22 @@ async def process_user_mentor_id(message: Message, state: FSMContext):
         data['username'] = message.from_user.username
         data['first_name'] = message.from_user.first_name
     # Показать inline кнопки с наставниками
-    mentors = session.query(Mentor).filter(Mentor.mentor_number_of_students <= config.num_stud).all()
+    mentors = session.query(Mentor).filter().all()
+    # logging.info(f"Менторы {mentors} найдены в базе данных")
     mentor_buttons = []
     for mentor in mentors:
         mentor_class = session.query(User).filter_by(account_id=mentor.mentor_account_id).first()
-        mentor_hero_class = mentor_class.hero_class
-        mentor_buttons.append(
-            InlineKeyboardButton(
-                f"{mentor.mentor_nickname} ({mentor_hero_class})-учеников:{mentor.mentor_number_of_students}",
-                callback_data=mentor_select_callback.new(action="select",
-                                                         mentor_id=mentor.id))
-        )
+        if mentor_class is not None:
+            # logging.info(f"Ментор инфо {mentor_class}")
+            mentor_hero_class = mentor_class.hero_class
+            mentor_buttons.append(
+                InlineKeyboardButton(
+                    f"{mentor.mentor_nickname} ({mentor_hero_class})-учеников:{mentor.mentor_number_of_students}",
+                    callback_data=mentor_select_callback.new(action="select",
+                                                             mentor_id=mentor.id))
+            )
+        else:
+            logging.error(f"Ментор with account_id={mentor.mentor_account_id} не найден в базе данных Users")
     keyboard = InlineKeyboardMarkup(row_width=1).add(*mentor_buttons)
 
     await message.reply("Выберите наставника:", reply_markup=keyboard)
@@ -2036,15 +2050,25 @@ async def process_change_mentor(call: CallbackQuery, state: FSMContext, callback
     action = callback_data['action']
     if action == "change":
         # Отправить сообщение с кнопками наставников
-        mentors = session.query(Mentor).all()
-        mentor_buttons = [
-            InlineKeyboardButton(mentor.mentor_nickname,
-                                 callback_data=mentor_select_callback.new(action="select", mentor_id=mentor.id))
-            for mentor in mentors
-        ]
+        mentors = session.query(Mentor).filter().all()
+        # logging.info(f"Менторы {mentors} найдены в базе данных")
+        mentor_buttons = []
+        for mentor in mentors:
+            mentor_class = session.query(User).filter_by(account_id=mentor.mentor_account_id).first()
+            if mentor_class is not None:
+                # logging.info(f"Ментор инфо {mentor_class}")
+                mentor_hero_class = mentor_class.hero_class
+                mentor_buttons.append(
+                    InlineKeyboardButton(
+                        f"{mentor.mentor_nickname} ({mentor_hero_class})-учеников:{mentor.mentor_number_of_students}",
+                        callback_data=mentor_select_callback.new(action="select",
+                                                                 mentor_id=mentor.id))
+                )
+            else:
+                logging.error(f"Ментор with account_id={mentor.mentor_account_id} не найден в базе данных Users")
         keyboard = InlineKeyboardMarkup(row_width=1).add(*mentor_buttons)
+
         await call.message.edit_text("Выберите наставника:", reply_markup=keyboard)
-        await call.answer()
 
     # @dp.message_handler(state=Registration.user_mentor_id)
 
@@ -2632,7 +2656,7 @@ async def get_start_menu():
         KeyboardButton('\U0001F198Помощь'),
         KeyboardButton('Администрирование')
     ]
-    # Заготовка под ролевую модель РОЛЕВАЯ
+    # Заготовка под ролевую модель #РОЛЕВАЯ
     # buttons = [
     #     types.KeyboardButton('\U0001F464Мой профиль'),
     #     types.KeyboardButton('Регистрация'),
@@ -2660,6 +2684,20 @@ def get_admin_id(telegram_id):
     else:
         logging.info(f"Функция get_admin_id - id админа: NULL")
         return None
+
+
+# функция проверки DPS и BM
+def validate_input(input_string):
+    """
+  Проверяет, соответствует ли строка заданному формату:
+  число от 1 до 5 знаков с буквой K, M, B, T или AA в конце.
+  """
+    pattern = r'^[1-9]\d{0,4}[KMBTA]{1}$'
+    match = re.match(pattern, input_string)
+    if match:
+        return True
+    else:
+        return False
 
 
 if __name__ == '__main__':
