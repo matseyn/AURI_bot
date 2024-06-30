@@ -1262,13 +1262,6 @@ async def process_user_mentor_id(message: Message, state: FSMContext):
                     callback_data=mentor_select_callback.new(action="select",
                                                              mentor_id=mentor.id))
             )
-        else:
-            mentor_buttons.append(
-                InlineKeyboardButton(
-                    f"{mentor.mentor_nickname} - учеников:{mentor.mentor_number_of_students}",
-                    callback_data=mentor_select_callback.new(action="select",
-                                                             mentor_id=mentor.id))
-            )
     keyboard = InlineKeyboardMarkup(row_width=1).add(*mentor_buttons)
     keyboard.add(
         InlineKeyboardButton("🔴Отмена", callback_data=mentor_select_callback.new(action="cancel", mentor_id=0)))
