@@ -8,6 +8,7 @@ from aiogram.utils import executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters import Text
 from aiogram.utils.exceptions import BotBlocked, ChatNotFound
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -165,7 +166,7 @@ async def start_command(message: types.Message):
     with open('image/start_message.jpg', 'rb') as start_mess_photo:
         await message.answer_photo(
             photo=start_mess_photo,
-            caption="Здрям, " + f"<b>{username}</b>" + ' - я милый бот клана <b>AURI!</b>\n' + config.start_message,
+            caption="Здрям, " + f"<b>{username}</b>" + ' - я милый бот клана <b>AURI!!</b>\n' + config.start_message,
             reply_markup=markup,
             parse_mode='HTML'
         )
@@ -217,7 +218,13 @@ async def show_all_profiles(message: types.Message):
         await message.answer("Профиль не найден.")
         return
 
-    await message.answer("Выберите профиль:", reply_markup=keyboard)
+    with open('image/my_profile_photo.jpg', 'rb') as my_profile_photo:
+        await message.answer_photo(
+            photo=my_profile_photo,
+            caption=config.my_profile_message,
+            reply_markup=keyboard,
+            parse_mode='HTML'
+        )
 
 
 # Показываем выбранный профиль пользователя
@@ -914,17 +921,16 @@ async def process_bm_dps(message: types.Message, state: FSMContext):
 @dp.message_handler(lambda message: message.text == 'Регистрация')
 async def registration_start(message: types.Message):
     # user_role = get_user_role(message.from_user.id)
+    first_name = message.from_user.first_name
     buttons = [
         types.KeyboardButton('Регистрация участника', description='Регистрация пользователя'),  # /reg
         types.KeyboardButton('Регистрация Наставника', description='Регистрация как Наставник'),  # /reg_mentors
         types.KeyboardButton('Регистрация Админа', description='Регистрация Админа'),  # /reg_admins
-        # types.KeyboardButton('\U0001F50DПоиск наставника', description='Найти свободных Наставников'),
         types.KeyboardButton('\U0001F519Назад', description='Вернуться к предыдущему меню')
     ]
     # Заготовка под ролевую модель #РОЛЕВАЯ
     # buttons = [
     #     types.KeyboardButton('Регистрация участника', description='Регистрация пользователя'),
-    #     types.KeyboardButton('\U0001F50DПоиск наставника', description='Найти свободных Наставников'),
     #     types.KeyboardButton('\U0001F519Назад', description='Вернуться к предыдущему меню')
     # ]
     # if user_role == 'admin':
@@ -941,10 +947,11 @@ async def registration_start(message: types.Message):
     with open('image/reg_user_1.jpg', 'rb') as reg_user_1_photo:
         await message.answer_photo(
             photo=reg_user_1_photo,
-            caption='Выберите тип регистрации:',
+            caption=f'Я очень рад, что именно ты — <b>{first_name}</b>, будешь играть с нами!' +
+                    config.start_register_message,
             reply_markup=markup,
+            parse_mode='HTML'
         )
-    # await message.answer('Выберите тип регистрации:', reply_markup=markup)
 
 
 @dp.message_handler(lambda message: message.text.replace('\U0001F519', '') == 'Назад')
@@ -1199,7 +1206,7 @@ async def process_select_reason(call: CallbackQuery, state: FSMContext):
                                       reply_markup=await get_start_menu())
             # await call.bot.send_message(config.officer_chat_id, f"Пользователь {user.username} успешно переведен в
             # {new_guild} администратором " f"{admin.admin_nickname} по причине: {reason}",
-            # message_thread_id=config.office_mentor_thread_id) НАСТРОИТЬ ПЕРЕД ЗАПУСКОМ
+            # message_thread_id=config.office_mentor_thread_id) НАСТРОИТЬ ПЕРЕД ЗАПУСКОМ #РОЛЕВАЯ
             await state.finish()
         except Exception as e:
             logging.error(f"Ошибка при записи данных в Transfers - {e}")
@@ -1241,7 +1248,7 @@ async def process_user_mentor_id(message: Message, state: FSMContext):
         data['username'] = message.from_user.username
         data['first_name'] = message.from_user.first_name
     # Показать inline кнопки с наставниками
-    mentors = session.query(Mentor).filter().all()
+    mentors = session.query(Mentor).all()
     # logging.info(f"Менторы {mentors} найдены в базе данных")
     mentor_buttons = []
     for mentor in mentors:
@@ -1251,67 +1258,91 @@ async def process_user_mentor_id(message: Message, state: FSMContext):
             mentor_hero_class = mentor_class.hero_class
             mentor_buttons.append(
                 InlineKeyboardButton(
-                    f"{mentor.mentor_nickname} ({mentor_hero_class})-учеников:{mentor.mentor_number_of_students}",
+                    f"{mentor.mentor_nickname} ({mentor_hero_class}) - учеников:{mentor.mentor_number_of_students}",
                     callback_data=mentor_select_callback.new(action="select",
                                                              mentor_id=mentor.id))
             )
         else:
-            logging.error(f"Ментор with account_id={mentor.mentor_account_id} не найден в базе данных Users")
+            mentor_buttons.append(
+                InlineKeyboardButton(
+                    f"{mentor.mentor_nickname} - учеников:{mentor.mentor_number_of_students}",
+                    callback_data=mentor_select_callback.new(action="select",
+                                                             mentor_id=mentor.id))
+            )
     keyboard = InlineKeyboardMarkup(row_width=1).add(*mentor_buttons)
+    keyboard.add(
+        InlineKeyboardButton("🔴Отмена", callback_data=mentor_select_callback.new(action="cancel", mentor_id=0)))
+    await message.reply(config.register_message_stage_1, reply_markup=keyboard, parse_mode='HTML')
 
-    await message.reply("Выберите наставника:", reply_markup=keyboard)
 
-
-@dp.callback_query_handler(mentor_select_callback.filter(action=["select"]))
+@dp.callback_query_handler(mentor_select_callback.filter(action=["select", "cancel"]))
 async def process_mentor_selection(call: CallbackQuery, state: FSMContext, callback_data: dict):
     action = callback_data['action']
+    # обрабатываем кнопку Отмена
+    if action == "cancel":
+        await call.message.delete()
+        await call.message.answer("Вы отменили регистрацию и возвращены в главное меню",
+                                  reply_markup=await get_start_menu())
+        await call.answer()
+        await state.finish()
+        # Добавьте здесь необходимую логику для выхода с этапа
+        # Например, вывод сообщения пользователю, переход на другой этап и т.д.
+        return
+
     mentor_id = int(callback_data['mentor_id'])
     # Получаем профиль Наставника
-    mentor = session.query(Mentor).filter_by(id=mentor_id).first()
-    if mentor:
-        # (Логика для получения и отображения профиля наставника с помощью существующей функции 'profile_type')
-        profile_text_mentor = f"Профиль Наставника:\n"
-        # Получение данных о связи с ментором
-        mentor_account_id = mentor.mentor_account_id
-        if mentor_account_id:
-            mentor_user_data = session.query(User).filter_by(account_id=mentor_account_id).first()
-            if mentor_user_data:
-                mentor_username = mentor_user_data.username
-                profile_text_mentor += f"Связь: @{mentor_username}\n"
+    if action == "select":
+        mentor = session.query(Mentor).filter_by(id=mentor_id).first()
+        if mentor:
+            profile_text_mentor = ""
+            # Получение данных о связи с ментором
+            mentor_account_id = mentor.mentor_account_id
+
+            # Получение информации о профиле Героя Наставника
+            if mentor_account_id:
+                mentor_user_data = session.query(User).filter_by(account_id=mentor_account_id).first()
+                profile_text_mentor_hero = "<b>О персонаже:</b>\n"
+                if mentor_user_data:
+                    profile_text_mentor_hero += f"Класс: {mentor_user_data.hero_class}\n"
+                    profile_text_mentor_hero += f"Ник: <code>{mentor_user_data.nickname}</code>\n"
+                    profile_text_mentor_hero += f"ID в игре: <code>{mentor_user_data.account_id}</code>\n"
+                    profile_text_mentor_hero += '<blockquote>Можешь прямо сейчас скопировать ID, просто нажав на него,' \
+                                                ' и просмотреть наставника в игре: "<b>Друзья</b>" —> ' \
+                                                '"<b>Добавить</b>".</blockquote>'
+                    profile_text_mentor = profile_text_mentor_hero
+                    profile_text_mentor += "\n\n<b>О наставнике:</b>\n"
+                    profile_text_mentor += f"Имя: {mentor_user_data.first_name}\n"
+                else:
+                    profile_text_mentor_hero += "Персонаж не найден\n"
             else:
-                profile_text_mentor += f"Связь: Не найдена\n"
-        else:
-            profile_text_mentor += f"Связь: Не указана\n"
+                profile_text_mentor += "Персонаж не найден\n"
 
-        # Вывод остальных данных о менторе
-        profile_text_mentor += f"Ник: {mentor.mentor_nickname}\n"
-
-        # Получение класса героя ментора
-        if mentor_account_id:
-            mentor_user_data = session.query(User).filter_by(account_id=mentor_account_id).first()
-            if mentor_user_data:
-                profile_text_mentor += f"Класс: {mentor_user_data.hero_class}\n"
+            if mentor_account_id:
+                mentor_user_data = session.query(User).filter_by(account_id=mentor_account_id).first()
+                if mentor_user_data:
+                    mentor_username = mentor_user_data.username
+                    profile_text_mentor += f"Профиль tg: @{mentor_username}\n"
+                else:
+                    profile_text_mentor += f"Профиль tg: Не найдена\n"
             else:
-                profile_text_mentor += f"Класс: Не найдена\n"
+                profile_text_mentor += f"Профиль tg: Не указана\n"
+            # (Логика для получения и отображения профиля наставника с помощью существующей функции 'profile_type')
+            profile_text_mentor += f"Время онлайн: {mentor.mentor_time_online}\n"
+            profile_text_mentor += f"Сильные стороны: {mentor.mentor_interest}\n"
+            profile_text_mentor += f"Количество учеников: {mentor.mentor_number_of_students}\n"
+            profile_text_mentor += f"Немного о наставнике: {mentor.mentor_characteristic}\n"
+            # кнопки "Подтвердить" и "Сменить" в разметку ответа
+            reply_markup = InlineKeyboardMarkup(row_width=1).add(
+                InlineKeyboardButton("Подтвердить",
+                                     callback_data=mentor_select_callback.new(action="confirm", mentor_id=mentor_id)),
+                InlineKeyboardButton("Сменить",
+                                     callback_data=mentor_select_callback.new(action="change", mentor_id=mentor_id)),
+            )
+            # logging.info(f"DATA process_mentor_selection:  {state.proxy()}")
+            await call.message.edit_text(text=profile_text_mentor, reply_markup=reply_markup, parse_mode='HTML')
+            await call.answer()
         else:
-            profile_text_mentor += f"Класс: Не указан\n"
-
-        profile_text_mentor += f"Знает: {mentor.mentor_interest}\n"
-        profile_text_mentor += f"Количество учеников: {mentor.mentor_number_of_students}\n"
-        profile_text_mentor += f"Время онлайн: {mentor.mentor_time_online}\n"
-        profile_text_mentor += f"Характеристика: {mentor.mentor_characteristic}\n"
-        # кнопки "Подтвердить" и "Сменить" в разметку ответа
-        reply_markup = InlineKeyboardMarkup(row_width=1).add(
-            InlineKeyboardButton("Подтвердить",
-                                 callback_data=mentor_select_callback.new(action="confirm", mentor_id=mentor_id)),
-            InlineKeyboardButton("Сменить",
-                                 callback_data=mentor_select_callback.new(action="change", mentor_id=mentor_id)),
-        )
-        logging.info(f"DATA process_mentor_selection:  {state.proxy()}")
-        await call.message.edit_text(text=profile_text_mentor, reply_markup=reply_markup)
-        await call.answer()
-    else:
-        await call.answer("Профиль Наставника не найден.")
+            await call.answer("Профиль Наставника не найден.")
 
 
 @dp.callback_query_handler(mentor_select_callback.filter(action=["confirm"]))
@@ -1322,8 +1353,8 @@ async def process_mentor_confirm(call: CallbackQuery, state: FSMContext, callbac
     # СОХРАНЯЕМ mentor_id В state ПЕРЕД ПЕРЕХОДОМ В ДРУГОЕ СОСТОЯНИЕ
     async with state.proxy() as data:
         data['mentor_id'] = mentor_id
-    logging.info(f"DATA process_mentor_confirm:  {data}")
-    logging.info(f"ID MENTOR:  {data['mentor_id']}")
+    # logging.info(f"DATA process_mentor_confirm:  {data}")
+    # logging.info(f"ID MENTOR:  {data['mentor_id']}")
     await state.set_state(Registration.nickname.state)  # Переход в Registration.nickname.state
     await call.answer()
 
@@ -1338,14 +1369,13 @@ async def registration_start(message: Message, state: FSMContext):
         username = data['first_name']
         await message.answer_photo(
             photo=open('image/reg_user_2.jpg', 'rb'),
-            caption=f'Привет! {username}. Давай зарегистрируем тебя.\n'
-                    'Какой у тебя Ник в игре?'
-                    '\n\nДля отмены или выхода из регистрации введи /cancel'
+            caption=config.register_message_stage_2,
+            parse_mode='HTML'
         )
-        message = message.text
-        logging.info(f"message:  {message}")
+        # message = message.text
+        # logging.info(f"message:  {message}")
 
-    logging.info(f"DATA1:  {data}")
+    # logging.info(f"DATA1:  {data}")
     await state.set_state(Registration.hero_class)
 
 
@@ -1355,7 +1385,7 @@ async def process_nickname(message: Message, state: FSMContext):
 
     # Проверка на запрещённый символ "/"
     if nickname.startswith('/') and nickname != '/cancel':
-        await message.reply("Неверно. Ник не должен начинаться с символа /")
+        await message.reply(config.register_message_stage_2_error, parse_mode='HTML')
         return  # Выход из обработчика, если ник неверный
 
     if nickname != '/cancel':
@@ -1363,14 +1393,15 @@ async def process_nickname(message: Message, state: FSMContext):
         async with state.proxy() as data:
             data['nickname'] = nickname
 
-        await message.reply("Прекрасно! Теперь выбери класс, в котором ты играешь:",
+        await message.reply(config.register_message_stage_3,
                             reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(
                                 types.KeyboardButton("\U0001FA93Берсерк"),
                                 types.KeyboardButton("\u2695Друид"),
                                 types.KeyboardButton("\U0001F3F9Лучница")
-                            ))
+                            ),
+                            parse_mode='HTML')
         await state.set_state(Registration.hero_class2.state)
-        logging.info(f"DATA process_nickname:  {data}")
+        # logging.info(f"DATA process_nickname:  {data}")
     elif nickname == '/cancel':
         await state.finish()
         await message.reply("Регистрация отменена!")
@@ -1386,7 +1417,7 @@ async def process_hero_class(message: types.Message, state: FSMContext):
 
     # Проверка на запрещённый символ "/"
     if hero_class.startswith('/') and hero_class != '/cancel':
-        await message.reply("Неверно. Класс не должен начинаться с символа /")
+        await message.reply(config.register_message_stage_3_error, parse_mode='HTML')
         return  # Выход из обработчика, если класс неверный
 
     if hero_class != '/cancel':
@@ -1396,13 +1427,15 @@ async def process_hero_class(message: types.Message, state: FSMContext):
         with open('image/reg_user_3.jpg', 'rb') as reg_user_3_photo:
             await message.answer_photo(
                 photo=reg_user_3_photo,
-                caption='Отлично! Теперь напиши свой ID в игре:'
+                caption=config.register_message_stage_4,
+                parse_mode='HTML'
             )
         await Registration.account_id.set()
-        logging.info(f"DATA process_hero_class:  {data}")
+        # logging.info(f"DATA process_hero_class:  {data}")
     elif hero_class == '/cancel':
         await state.finish()
         await message.reply("Регистрация отменена!")
+
         # Устанавливаем таймаут для ответа 5 минут
         # await asyncio.sleep(300)
         # await message.reply("Извини, но ты слишком долго не отвечал. Регистрация отменена.")
@@ -1431,8 +1464,7 @@ async def process_account_id(message: types.Message, state: FSMContext):
             account_id.endswith('160') and
             int(account_id) > 0
     ):
-        await message.reply(
-            "Неверно. ID должен содержать только цифры, быть не более 11 символов и заканчиваться на '160'.")
+        await message.reply(config.register_message_stage_4_error, parse_mode='HTML')
         return  # Выход из обработчика, если ID неверный
 
     # Проверка на уникальность account_id
@@ -1443,7 +1475,7 @@ async def process_account_id(message: types.Message, state: FSMContext):
                             f"Его tg: @{existing_user.username}\n"
                             f"Ник: {existing_user.nickname}\n"
                             f"Класс: {existing_user.hero_class}"
-                            f"\n\n Регистрация завершена. Для помощи обратитесь к Администратору!")
+                            f"\n\n Регистрация завершена. Для помощи обратись к @VovaM")
         await state.finish()
         return
 
@@ -1452,10 +1484,9 @@ async def process_account_id(message: types.Message, state: FSMContext):
         data['account_id'] = account_id
         data['guild'] = 'AcademAURI'  # Автоматически задаем гильдию
         data['status'] = '\U0001F7E2Active'
-        logging.info(f"DATA process_account_id:  {data}")
+        # logging.info(f"DATA process_account_id:  {data}")
     # Запрос фотографии
-    await message.reply("Загрузите свою фотографию:"
-                        "\nИспользуйте /next - для пропуска, если сейчас нет фотографии профиля")
+    await message.reply(config.register_message_stage_5, parse_mode='HTML')
     await Registration.photo.set()
 
 
@@ -1487,12 +1518,16 @@ async def process_photo(message: types.Message, state: FSMContext):
         async with state.proxy() as data:
             # Сохраняем путь к файлу
             data['photo'] = os.path.join(save_path, unique_filename)
-            logging.info(f"DATA process_photo:  {data}")
+            # logging.info(f"DATA process_photo:  {data}")
             # Получаем old_students_count из таблицы Mentors
             id_mentor = data['mentor_id']
             selected_mentor = session.query(Mentor).filter_by(id=id_mentor).first()
             old_students_count = selected_mentor.mentor_number_of_students
             mentor_nickname = selected_mentor.mentor_nickname
+            # Получаем ТГ наставника для сообщения
+            mentor_data = session.query(User).filter_by(account_id=selected_mentor.mentor_account_id).first()
+            if mentor_data:
+                tg_mentor = mentor_data.username
             # logging.info(f"У {mentor_nickname} было - {old_students_count}")  # for Debug -> delete after
 
             try:
@@ -1519,12 +1554,26 @@ async def process_photo(message: types.Message, state: FSMContext):
                 session.add(user)
                 session.commit()
 
-                logging.info(
-                    f"Пользователь {message.from_user.first_name} (username:{message.from_user.username}, "
-                    f"ID: {message.from_user.id}) успешно завершил регистрацию."
-                )
-
-                await message.reply("Регистрация завершена! Спасибо за информацию!")
+                # logging.info(
+                #     f"Пользователь {message.from_user.first_name} (username:{message.from_user.username}, "
+                #     f"ID: {message.from_user.id}) успешно завершил регистрацию."
+                # )
+                text_message = config.register_message_stage_final + "\n\n" + f"{data['first_name']}, я уже приступил " \
+                                                                              'к своим обязанностям и ' \
+                                                                              f'сообщил твоему наставнику: ' \
+                                                                              f'<b>{mentor_nickname}</b>, что ему нужно ' \
+                                                                              f'с тобой связаться. ' \
+                                                                              f'\n\nОбычно наставники отвечают достаточно '\
+                                                                              f'быстро, но не мгновенно. Просто подожди ' \
+                                                                              f'пока он тебе напишет или напиши ему:' \
+                                                                              f'@{tg_mentor}, если ты сомневаешься, ' \
+                                                                              f'что {mentor_nickname} получил сообщение.'
+                with open('image/end_registration_user.jpg', 'rb') as reg_user_end_photo:
+                    await message.answer_photo(
+                        photo=reg_user_end_photo,
+                        caption=text_message,
+                        parse_mode='HTML'
+                    )
                 await state.finish()
                 from script_db import update_students  # Вызов скрипта для функции обновления данных в таблице Mentors
                 await update_students()  # Обновление данных таблице Mentors
@@ -1532,7 +1581,7 @@ async def process_photo(message: types.Message, state: FSMContext):
                 # Получаем количество подопечных после обновления
                 new_students_count = session.query(Mentor).filter_by(id=selected_mentor.id).first() \
                     .mentor_number_of_students
-                logging.info("Функция update_students - успешно выполнена")
+                # logging.info("Функция update_students - успешно выполнена")
                 # logging.info(f"У {mentor_nickname} стало - {new_students_count}")  # for Debug -> delete after
                 # session.close()  # Закрываем сеанс с БД после завершения регистрации
                 # logging.info(f"Наставник {mentor_nickname} (ID: {mentor.id}) - "
@@ -1551,18 +1600,64 @@ async def process_photo(message: types.Message, state: FSMContext):
                             try:
                                 mentor_username = mentor_user_data.username
                                 mentor_nickname = mentor_user_data.nickname
-                                mentor_message = f"Участник {user.nickname} с гильдии {user.guild} " \
-                                                 f"выбрал Вас в качестве своего наставника." \
-                                                 f"\n\nДля связи с учеником используйте @{user.username}"
-                                # notification_guild = f"Участник {user.nickname} герой {user.hero_class} " \
-                                #                      f"с гильдии {user.guild}" \
-                                #                      f"выбрал качестве своего наставника{mentor_nickname}" \
-                                #                      f"\n\nДля связи с участником используйте @{user.username}"
-                                await bot.send_message(mentor_telegram_id, mentor_message)
-                                # await bot.send_message(config.officer_chat_id, notification_guild,
-                                # message_thread_id=config.office_mentor_thread_id) НАСТРОИТЬ ПЕРЕД ЗАПУСКОМ
+                                # mentor_message = f"Участник {user.nickname} с гильдии {user.guild} " \
+                                #                  f"выбрал Вас в качестве своего наставника." \
+                                #                  f"\n\nДля связи с учеником используйте @{user.username}"
+                                profile_user_text = "<b>Профиль участника:</b>"
+                                profile_user_text += f"\nИмя: {data['first_name']}"
+                                profile_user_text += f"\ntelegram: @{data['username']}"
+                                profile_user_text += f"\n\nНикнейм: <code>{data['nickname']}</code>"
+                                profile_user_text += f"\nКласс героя: <b>{data['hero_class']}</b>"
+                                profile_user_text += f"\nID аккаунта: <code>{data['account_id']}</code>"
+                                profile_user_text += f"\n\nГильдия: <b>{data['guild']}</b>"
+                                profile_user_text += "\n<blockquote>Не забудь перевести ученика в основной клан, " \
+                                                     "как он будет готов. Сделать это можно вбив его ID и выбрать " \
+                                                     "нужную команду в карточке участника</blockquote>"
+                                mentor_message = config.mentor_notification_message + "\n\n" + profile_user_text
+                                profile_photo_user = data['photo']
+                                if profile_photo_user:
+                                    try:
+                                        with open(profile_photo_user, 'rb') as user_profile_photo:
+                                            await bot.send_photo(
+                                                mentor_telegram_id,
+                                                photo=user_profile_photo,
+                                                caption=mentor_message,
+                                                parse_mode='HTML'
+                                            )
+                                    except Exception as e:
+                                        logging.error(
+                                            f"При отправке сообщения Наставнику - произошла ошибка - [{e}]")
+
+                                notification_guild = "<b>Ура! У нас пополнение🥰</b>" \
+                                                     f"\n\nТеперь <b>{data['first_name']}</b> с нами!" \
+                                                     f"\ntelegram: @{data['username']}" \
+                                                     "\nПоприветствуйте нового члена нашей дружной команды лично " \
+                                                     "и поделитесь премудростями игры и клана. Расскажите что " \
+                                                     "лучше сделать, чтобы быстрее попасть в <b>AURI!</b>" \
+                                                     "\n\n<b>О Бессмертном:</b>" \
+                                                     f"\nНикнейм: <code>{data['nickname']}</code>" \
+                                                     f"\nКласс героя: <b>{data['hero_class']}</b>" \
+                                                     f"\nID аккаунта: <code>{data['account_id']}</code>" \
+                                                     f"\n\nНаставник: {mentor_nickname}"
+                                profile_photo_user = data['photo']
+                                if profile_photo_user:
+                                    try: # НАСТРОИТЬ ПЕРЕД ЗАПУСКОМ
+                                        with open(profile_photo_user, 'rb') as user_profile_photo:
+                                            await bot.send_photo(
+                                                config.officer_chat_id,
+                                                photo=user_profile_photo,
+                                                caption=notification_guild,
+                                                parse_mode='HTML',
+                                                message_thread_id=config.office_mentor_thread_id
+                                            )
+                                    except Exception as e:
+                                        logging.error(
+                                            f"При отправке сообщения Наставнику - произошла ошибка - [{e}]")
+
                             except Exception as e:
-                                logging.error(f"При отправке сообщения Наставнику - произошла ошибка - [{e}]")
+                                logging.error(
+                                    f"При отправке сообщения Наставнику - произошла ошибка - [{e}]")
+
                 # Возврат на главное меню
                 await bot.send_message(message.from_user.id, "Регистрация завершена! Спасибо! Вы возвращены "
                                                              "в главное меню", reply_markup=await get_start_menu())
@@ -1583,12 +1678,15 @@ async def process_photo(message: types.Message, state: FSMContext):
         elif message.text.lower() == '/next':
             try:
                 async with state.proxy() as data:
-                    logging.info(f"DATA process_photo:  {data}")
+                    # logging.info(f"DATA process_photo:  {data}")
                     # Получаем old_students_count из таблицы Mentors
                     id_mentor = data['mentor_id']
                     selected_mentor = session.query(Mentor).filter_by(id=id_mentor).first()
                     old_students_count = selected_mentor.mentor_number_of_students
                     mentor_nickname = selected_mentor.mentor_nickname
+                    mentor_data = session.query(User).filter_by(account_id=selected_mentor.mentor_account_id).first()
+                    if mentor_data:
+                        tg_mentor = mentor_data.username
                     # Получаем количество подопечных до обновления
                     # old_students_count = session.query(User).filter_by(mentor_id=mentor.id).count()
 
@@ -1611,12 +1709,26 @@ async def process_photo(message: types.Message, state: FSMContext):
                     session.add(user)
                     session.commit()
 
-                    logging.info(
-                        f"Пользователь {message.from_user.first_name} (username:{message.from_user.username}, "
-                        f"ID: {message.from_user.id}) успешно завершил регистрацию."
-                    )
-
-                    await message.reply("Регистрация завершена! Спасибо за информацию!")
+                    # logging.info(
+                    #     f"Пользователь {message.from_user.first_name} (username:{message.from_user.username}, "
+                    #     f"ID: {message.from_user.id}) успешно завершил регистрацию."
+                    # )
+                    text_message = config.register_message_stage_final + "\n\n" + f"{data['first_name']}, я уже приступил " \
+                                                                                  'к своим обязанностям и ' \
+                                                                                  f'сообщил твоему наставнику: ' \
+                                                                                  f'<b>{mentor_nickname}</b>, что ему нужно ' \
+                                                                                  f'с тобой связаться. ' \
+                                                                                  f'\n\nОбычно наставники отвечают достаточно ' \
+                                                                                  f'быстро, но не мгновенно. Просто подожди ' \
+                                                                                  f'пока он тебе напишет или напиши ему:' \
+                                                                                  f'@{tg_mentor}, если ты сомневаешься, ' \
+                                                                                  f'что {mentor_nickname} получил сообщение.'
+                    with open('image/end_registration_user.jpg', 'rb') as reg_user_end_photo:
+                        await message.answer_photo(
+                            photo=reg_user_end_photo,
+                            caption=text_message,
+                            parse_mode='HTML'
+                        )
                     await state.finish()
                     from script_db import \
                         update_students  # Вызов скрипта для функции обновления данных в таблице Mentors
@@ -1647,16 +1759,51 @@ async def process_photo(message: types.Message, state: FSMContext):
                                     mentor_message = f"Участник {user.nickname} с гильдии {user.guild} " \
                                                      f"выбрал Вас в качестве своего наставника." \
                                                      f"\n\nДля связи с учеником используйте @{user.username}"
-                                    notification_guild = f"Участник {user.nickname} герой {user.hero_class} " \
-                                                         f"с гильдии {user.guild}" \
-                                                         f"выбрал качестве своего наставника{mentor_nickname}" \
-                                                         f"\n\nДля связи с участником используйте @{user.username}"
-                                    await bot.send_message(mentor_telegram_id, mentor_message)
-                                    # await bot.send_message(config.officer_chat_id, notification_guild,
-                                    #                        message_thread_id=config.office_mentor_thread_id) НАСТРОИТЬ ПЕРЕД ЗАПУСКОМ
+                                    profile_user_text = "<b>Профиль участника:</b>"
+                                    profile_user_text += f"\nИмя: {data['first_name']}"
+                                    profile_user_text += f"\ntelegram: @{data['username']}"
+                                    profile_user_text += f"\n\nНикнейм: <code>{data['nickname']}</code>"
+                                    profile_user_text += f"\nКласс героя: <b>{data['hero_class']}</b>"
+                                    profile_user_text += f"\nID аккаунта: <code>{data['account_id']}</code>"
+                                    profile_user_text += f"\n\nГильдия: <b>{data['guild']}</b>"
+                                    profile_user_text += "\n<blockquote>Не забудь перевести ученика в основной клан, " \
+                                                         "как он будет готов. Сделать это можно вбив его ID и выбрать " \
+                                                         "нужную команду в карточке участника</blockquote>"
+                                    mentor_message = config.mentor_notification_message + "\n\n" + profile_user_text
+                                    try:
+                                        await bot.send_message(
+                                            mentor_telegram_id,
+                                            text=mentor_message,
+                                            parse_mode='HTML'
+                                        )
+                                    except Exception as e:
+                                        logging.error(
+                                            f"При отправке сообщения Наставнику - произошла ошибка - [{e}]")
+                                    notification_guild = "<b>Ура! У нас пополнение🥰</b>" \
+                                                         f"\n\nТеперь <b>{data['first_name']}</b> с нами!" \
+                                                         f"\ntelegram: @{data['username']}" \
+                                                         "\nПоприветствуйте нового члена нашей дружной команды лично " \
+                                                         "и поделитесь премудростями игры и клана. Расскажите что " \
+                                                         "лучше сделать, чтобы быстрее попасть в <b>AURI!</b>" \
+                                                         "\n\n<b>О Бессмертном:</b>" \
+                                                         f"\nНикнейм: <code>{data['nickname']}</code>" \
+                                                         f"\nКласс героя: <b>{data['hero_class']}</b>" \
+                                                         f"\nID аккаунта:: <code>{data['account_id']}</code>" \
+                                                         f"\n\nНаставник: {mentor_nickname}"
+                                    try: # НАСТРОИТЬ ПЕРЕД ЗАПУСКОМ
+                                        await bot.send_message(
+                                            chat_id=config.officer_chat_id,
+                                            text=notification_guild,
+                                            message_thread_id=config.office_mentor_thread_id,
+                                            parse_mode='HTML'
+                                        )
+                                    except Exception as e:
+                                        logging.error(
+                                            f"При отправке сообщения Офицерам - произошла ошибка - [{e}]")
+
                                 except Exception as e:
-                                    logging.error(f"При отправке сообщения Наставнику - произошла ошибка - [{e}]")
-                                    # Возврат на главное меню
+                                    logging.error(
+                                        f"При отправке сообщения Наставнику - произошла ошибка - [{e}]")
                 await bot.send_message(message.from_user.id, "Регистрация завершена! Спасибо! Вы возвращены "
                                                              "в главное меню", reply_markup=await get_start_menu())
                 session.close()  # Закрытие сессии после отправки сообщений
@@ -2067,8 +2214,10 @@ async def process_change_mentor(call: CallbackQuery, state: FSMContext, callback
             else:
                 logging.error(f"Ментор with account_id={mentor.mentor_account_id} не найден в базе данных Users")
         keyboard = InlineKeyboardMarkup(row_width=1).add(*mentor_buttons)
+        keyboard.add(
+            InlineKeyboardButton("🔴Отмена", callback_data=mentor_select_callback.new(action="cancel", mentor_id=0)))
 
-        await call.message.edit_text("Выберите наставника:", reply_markup=keyboard)
+        await call.message.edit_text(config.register_message_stage_1, reply_markup=keyboard, parse_mode='HTML')
 
     # @dp.message_handler(state=Registration.user_mentor_id)
 
